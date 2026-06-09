@@ -1,0 +1,57 @@
+{
+  "version": "0.2",
+  "metadata": {
+    "infracostCommand": "breakdown",
+    "vcsRepositoryUrl": ""
+  },
+  "currency": "USD",
+  "projects": [
+    {
+      "name": "terraform/staging",
+      "metadata": {
+        "path": "terraform/staging",
+        "type": "terraform_dir"
+      },
+      "breakdown": {
+        "resources": [
+          {
+            "name": "aws_db_instance.payments_db",
+            "resourceType": "aws_db_instance",
+            "tags": {
+              "environment": "staging",
+              "owner": "payments-team"
+            },
+            "metadata": {},
+            "hourlyCost": "0.0543972602739726",
+            "monthlyCost": "39.71",
+            "costComponents": [
+              {
+                "name": "Database instance (on-demand, Single-AZ, db.t3.small)",
+                "unit": "hours",
+                "hourlyQuantity": "1",
+                "monthlyQuantity": "730",
+                "price": "0.051",
+                "hourlyCost": "0.051",
+                "monthlyCost": "37.23"
+              },
+              {
+                "name": "Storage (general purpose SSD, gp3)",
+                "unit": "GB",
+                "hourlyQuantity": "0.027397260273972",
+                "monthlyQuantity": "20",
+                "price": "0.124",
+                "hourlyCost": "0.0033972602739726",
+                "monthlyCost": "2.48"
+              }
+            ]
+          }
+        ],
+        "totalHourlyCost": "0.0543972602739726",
+        "totalMonthlyCost": "39.71"
+      }
+    }
+  ],
+  "totalHourlyCost": "0.0543972602739726",
+  "totalMonthlyCost": "39.71",
+  "timeGenerated": "2026-06-04T00:00:00Z"
+}

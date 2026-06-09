@@ -1,0 +1,2 @@
+ruamel.yaml>=0.18
+python-telegram-bot>=20.0

@@ -21,9 +21,14 @@ import argparse
 import json
 import os
 import shutil
+import subprocess
+from datetime import datetime, timezone
+
+import boto3
 
 from agent.approval_synthesizer import ApprovalSynthesizer
 from agent.iac_generator import IaCGenerator
+from agent.manifest_reader import ManifestReader
 from gates import plan_gate, security_gate
 from gates.cost_gate import evaluate as cost_evaluate
 from gates.cost_gate import load_fixture, run_infracost, TARGET_RESOURCE
@@ -141,6 +146,147 @@ def run_pipeline(
             "plan": plan_result,
         },
         "hcl_path": main_tf,
+    }
+
+
+def apply_infrastructure(terraform_dir: str, snapshot_dir: str) -> dict:
+    """Save a pre-apply state snapshot, then run tofu plan + apply.
+
+    Args:
+        terraform_dir: Directory containing .tf files and any existing state.
+        snapshot_dir: Directory where the pre-apply state snapshot is written.
+
+    Returns:
+        {"status": "success", "output": str, "state_snapshot_path": str}
+
+    Raises:
+        RuntimeError: if plan or apply exits non-zero; message contains stderr.
+    """
+    terraform_dir = os.path.abspath(terraform_dir)
+    snapshot_dir = os.path.abspath(snapshot_dir)
+    os.makedirs(snapshot_dir, exist_ok=True)
+
+    # Snapshot existing state before touching anything.
+    state_src = os.path.join(terraform_dir, "terraform.tfstate")
+    state_snapshot = os.path.join(snapshot_dir, "before_apply.tfstate")
+    if os.path.exists(state_src):
+        shutil.copyfile(state_src, state_snapshot)
+    else:
+        # No prior state — write an empty sentinel so the path is always valid.
+        with open(state_snapshot, "w") as fh:
+            json.dump({}, fh)
+
+    combined_output: list[str] = []
+
+    # --- plan (surface changes; fail fast before touching real infra) ---
+    plan = subprocess.run(
+        ["tofu", "plan", "-no-color"],
+        cwd=terraform_dir,
+        capture_output=True,
+        text=True,
+    )
+    combined_output.append(plan.stdout)
+    if plan.returncode != 0:
+        raise RuntimeError(
+            f"tofu plan failed (exit {plan.returncode}):\n{plan.stderr}"
+        )
+
+    # --- apply ---
+    apply = subprocess.run(
+        ["tofu", "apply", "-auto-approve", "-no-color"],
+        cwd=terraform_dir,
+        capture_output=True,
+        text=True,
+    )
+    combined_output.append(apply.stdout)
+    if apply.returncode != 0:
+        raise RuntimeError(
+            f"tofu apply failed (exit {apply.returncode}):\n{apply.stderr}"
+        )
+
+    return {
+        "status": "success",
+        "output": "\n".join(combined_output),
+        "state_snapshot_path": state_snapshot,
+    }
+
+
+def snapshot_data_bearing_resources(manifest_path: str, before_state: dict) -> dict:
+    """Take native RDS snapshots for data-bearing resources that already exist.
+
+    Greenfield resources (absent from before_state's resources list) are silently
+    skipped — there is nothing to snapshot on first provision.
+
+    Args:
+        manifest_path: Path to the platform manifest YAML.
+        before_state: Parsed terraform.tfstate JSON captured before the apply
+                      (the dict written by apply_infrastructure's snapshot step).
+
+    Returns:
+        {
+            "snapshots": [
+                {"resource": str, "snapshot_id": str, "snapshot_arn": str}
+            ],
+            "status": "success" | "skipped",
+        }
+
+    Raises:
+        boto3 ClientError propagated directly if the RDS API call fails.
+    """
+    reader = ManifestReader(manifest_path)
+
+    # Build lookup: TF resource name (underscores) → instance attributes.
+    # TF state uses underscores; the manifest uses hyphens.
+    tf_attrs: dict[str, dict] = {}
+    for tf_res in before_state.get("resources", []):
+        instances = tf_res.get("instances", [])
+        if instances:
+            tf_attrs[tf_res.get("name", "")] = instances[0].get("attributes", {})
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    snapshots: list[dict] = []
+
+    for env in reader.get_environments():
+        resources = reader.get_resources(env)
+        # pylint: disable=protected-access  # same package, no public region accessor
+        env_data = reader._environment(env)
+        aws_region = env_data.get("regions", {}).get("aws", "ap-southeast-5")
+
+        for resource_name, resource in resources.items():
+            if not resource.get("data_bearing"):
+                continue
+            if resource.get("type") != "aws_db_instance":
+                continue
+
+            # Manifest "payments-db" → TF state name "payments_db".
+            tf_name = resource_name.replace("-", "_")
+            if tf_name not in tf_attrs:
+                # Not yet provisioned — greenfield, nothing to snapshot.
+                continue
+
+            attrs = tf_attrs[tf_name]
+            # TF stores the DBInstanceIdentifier as the "id" attribute.
+            db_instance_id = attrs.get("id") or attrs.get("identifier")
+            if not db_instance_id:
+                continue
+
+            snapshot_id = f"{resource_name}-before-apply-{timestamp}"
+            rds = boto3.client("rds", region_name=aws_region)
+            resp = rds.create_db_snapshot(
+                DBInstanceIdentifier=db_instance_id,
+                DBSnapshotIdentifier=snapshot_id,
+            )
+            snapshots.append(
+                {
+                    "resource": resource_name,
+                    "snapshot_id": snapshot_id,
+                    "snapshot_arn": resp["DBSnapshot"]["DBSnapshotArn"],
+                }
+            )
+
+    return {
+        "snapshots": snapshots,
+        "status": "success" if snapshots else "skipped",
     }
 
 

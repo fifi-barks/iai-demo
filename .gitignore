@@ -1,6 +1,33 @@
+# Python
+venv/
 .venv/
 __pycache__/
 *.pyc
 *.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Environment & secrets
+.env
+.env.*
+instance_info.json
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Terraform / OpenTofu
 .terraform/
 .terraform.lock.hcl
+**/.terraform/
+**/.terraform.lock.hcl
+**/*.tfstate
+**/*.tfstate.backup
+**/*.tfstate.*
+terraform/generated/
+
+# IDE
+.vscode/
+.idea/

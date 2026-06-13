@@ -4,7 +4,7 @@
 #   GCP: asia-southeast1 (Singapore)
 # Credentials: AWS via EC2 instance role (IMDSv2); GCP via Workload Identity Federation.
 
-opentofu {
+terraform {
   required_version = ">= 1.6"
 
   required_providers {

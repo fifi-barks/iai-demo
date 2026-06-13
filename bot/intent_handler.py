@@ -26,7 +26,7 @@ APPROVE_LABEL = "✅ Approve"
 DECLINE_LABEL = "❌ Decline"
 
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/generate")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "mistral")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "phi")
 
 _INTENT_SYSTEM_PROMPT = """\
 You are an infrastructure assistant. Parse the user's request and extract the \

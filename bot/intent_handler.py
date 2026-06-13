@@ -1,6 +1,6 @@
 """Intent handler — Telegram-free core of the IAI bot.
 
-Receives a plain-language intent string, sends it to a local Mistral 7B model
+Receives a plain-language intent string, sends it to a local phi 7B model
 via Ollama to extract structured infrastructure requirements, then runs the full
 pipeline: manifest read → IaC generate → three gates → synthesized approval card.
 
@@ -13,6 +13,8 @@ import logging
 import os
 
 import requests
+from telegram import Update
+from telegram.ext import ContextTypes
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +28,7 @@ APPROVE_LABEL = "✅ Approve"
 DECLINE_LABEL = "❌ Decline"
 
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/generate")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "mistral")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "phi")
 
 _INTENT_SYSTEM_PROMPT = """\
 You are an infrastructure assistant. Parse the user's request and extract the \
@@ -59,7 +61,7 @@ User request: {user_message}"""
 
 
 def process_intent_with_ollama(user_message: str) -> dict:
-    """Send a plain-language intent to Ollama/Mistral and extract structured requirements.
+    """Send a plain-language intent to Ollama/phi and extract structured requirements.
 
     Args:
         user_message: The raw intent text from the user.
@@ -115,7 +117,7 @@ def process_intent(
 ) -> dict:
     """Process a plain-language intent and return the pipeline result.
 
-    Sends the intent through Ollama/Mistral first to extract structured
+    Sends the intent through Ollama/phi first to extract structured
     requirements, then runs the full gate pipeline.
 
     Returns:
@@ -125,7 +127,7 @@ def process_intent(
             "approve_label": str,   # button label for Approve
             "decline_label": str,   # button label for Decline
             "intent": str,          # the original intent text, echoed back
-            "parsed_intent": dict,  # structured requirements from Mistral
+            "parsed_intent": dict,  # structured requirements from phi
         }
     """
     parsed_intent = process_intent_with_ollama(intent_text)
@@ -135,9 +137,44 @@ def process_intent(
 
     return {
         "card": result["card"],
+        "keyboard": result.get("keyboard"),
         "raw": result["raw"],
         "approve_label": APPROVE_LABEL,
         "decline_label": DECLINE_LABEL,
         "intent": intent_text,
         "parsed_intent": parsed_intent,
     }
+
+
+async def handle_approval(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Telegram callback handler for the Approve button (callback_data="approve").
+
+    Register with:
+        application.add_handler(CallbackQueryHandler(handle_approval, pattern="^approve$"))
+    """
+    from agent.pipeline import (
+        TERRAFORM_GENERATED_DIR,
+        TERRAFORM_SNAPSHOT_DIR,
+        apply_infrastructure,
+        snapshot_data_bearing_resources,
+        update_manifest_after_apply,
+    )
+
+    query = update.callback_query
+    await query.answer()
+
+    try:
+        apply_result = apply_infrastructure(TERRAFORM_GENERATED_DIR, TERRAFORM_SNAPSHOT_DIR)
+
+        with open(apply_result["state_snapshot_path"]) as fh:
+            before_state = json.load(fh)
+        snapshot_data_bearing_resources(MANIFEST_PATH, before_state)
+
+        tfstate_path = os.path.join(TERRAFORM_GENERATED_DIR, "terraform.tfstate")
+        update_manifest_after_apply(MANIFEST_PATH, tfstate_path)
+
+        await query.edit_message_text("✓ Infrastructure applied successfully. Manifest updated.")
+
+    except Exception as exc:
+        logger.error("Approval handler failed: %s", exc)
+        await query.edit_message_text(f"✗ Apply failed: {exc}")

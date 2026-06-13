@@ -3,3 +3,4 @@ python-telegram-bot>=20.0
 boto3>=1.34
 checkov>=3.0
 requests>=2.31
+Flask>=2.0

@@ -11,7 +11,7 @@ and replies with a synthesized approval card + Approve/Decline buttons.
 import logging
 import os
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import Update
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -21,7 +21,7 @@ from telegram.ext import (
     filters,
 )
 
-from bot.intent_handler import APPROVE_LABEL, DECLINE_LABEL, process_intent
+from bot.intent_handler import handle_approval, process_intent
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -47,30 +47,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     ack = await update.message.reply_text("Reading the manifest and running the gates…")
 
     result = process_intent(intent)
-    card = result["card"]
-
-    keyboard = [[
-        InlineKeyboardButton(APPROVE_LABEL, callback_data="approve"),
-        InlineKeyboardButton(DECLINE_LABEL, callback_data="decline"),
-    ]]
     # Edit the ack message to show the card (keeps chat tidy; the ack becomes the card)
     await ack.edit_text(
-        f"```\n{card}\n```",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        f"```\n{result['card']}\n```",
+        reply_markup=result["keyboard"],
         parse_mode="MarkdownV2",
     )
 
 
-async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def handle_decline(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
-    if query.data == "approve":
-        await query.edit_message_text(
-            "✅ Approved — infrastructure apply queued.\n"
-            "(Apply + manifest auto-update: Milestone 4)"
-        )
-    else:
-        await query.edit_message_text("❌ Declined — no changes applied.")
+    await query.edit_message_text("❌ Declined — no changes applied.")
 
 
 def main() -> None:
@@ -78,7 +66,8 @@ def main() -> None:
     app = Application.builder().token(token).build()
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_handler(CallbackQueryHandler(handle_callback))
+    app.add_handler(CallbackQueryHandler(handle_approval, pattern="^approve$"))
+    app.add_handler(CallbackQueryHandler(handle_decline, pattern="^decline$"))
     logger.info("IAI bot polling…")
     app.run_polling()
 

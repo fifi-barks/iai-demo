@@ -6,10 +6,14 @@ raw tool output, check IDs, or tool names. That is the whole trust contract:
 if the card is faithful, the human can approve infrastructure without reading
 Checkov or Infracost directly.
 
-Library scope: stdlib + ruamel.yaml (via ManifestReader). No CLI entry point.
+Library scope: stdlib + ruamel.yaml (via ManifestReader) + python-telegram-bot
+(InlineKeyboardMarkup is embedded in the returned dict so the bot doesn't have
+to reconstruct it from labels). No CLI entry point.
 """
 
 import math
+
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from agent.manifest_reader import ManifestReader
 
@@ -43,8 +47,15 @@ class ApprovalSynthesizer:
         cost_result: dict,
         manifest_path: str,
         env: str = "staging",
-    ) -> str:
-        """Return the approval card as a plain string."""
+    ) -> dict:
+        """Return the approval card as a dict with text and an InlineKeyboardMarkup.
+
+        Returns:
+            {
+                "text": str,                      # the full card text
+                "keyboard": InlineKeyboardMarkup, # Approve / Decline buttons
+            }
+        """
         reader = ManifestReader(manifest_path)
         resources = reader.get_resources(env)
         criticality = reader.resolve_criticality(env)
@@ -55,9 +66,12 @@ class ApprovalSynthesizer:
         lines.append(self._cost_line(cost_result))
         lines.extend(self._security_lines(security_result))
         lines.extend(self._critical_lines(resources, criticality))
-        lines.append("")
-        lines.append("[ Approve ]  [ Decline ]")
-        return "\n".join(lines)
+
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("Approve", callback_data="approve"),
+            InlineKeyboardButton("Decline", callback_data="decline"),
+        ]])
+        return {"text": "\n".join(lines), "keyboard": keyboard}
 
     # --- Title --------------------------------------------------------------
 

@@ -138,12 +138,13 @@ def run_pipeline(
     plan_result = plan_gate.run_path(_GENERATED_DIR)
 
     # --- Synthesize ---
-    card = ApprovalSynthesizer().synthesize(
+    card_result = ApprovalSynthesizer().synthesize(
         plan_result, security_result, cost_result, manifest_path, env
     )
 
     return {
-        "card": card,
+        "card": card_result["text"],
+        "keyboard": card_result["keyboard"],
         "raw": {
             "security": security_result,
             "cost": cost_result,

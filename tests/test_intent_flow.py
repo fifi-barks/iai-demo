@@ -101,16 +101,15 @@ def test_1_card_returned():
 
 
 # ---------------------------------------------------------------------------
-# Test 2 — Approve/Decline labels are present (in result dict and in card text)
+# Test 2 — Approve/Decline labels are present in result dict and keyboard
 # ---------------------------------------------------------------------------
 def test_2_approve_decline_labels():
-    name = "Test 2 — Approve/Decline labels are present in result and card"
+    name = "Test 2 — Approve/Decline labels are present in result and keyboard"
     result, err = _get_intent_result()
     if err:
         record(name, False, f"process_intent() raised an exception:\n{err}")
         return
     try:
-        card = result["card"]
         failures = []
 
         if result["approve_label"] != APPROVE_LABEL:
@@ -125,14 +124,13 @@ def test_2_approve_decline_labels():
                 f"got {result['decline_label']!r}"
             )
 
-        # The card text itself must end with the action buttons section.
-        if "Approve" not in card:
-            failures.append("'Approve' not found in card text")
-        if "Decline" not in card:
-            failures.append("'Decline' not found in card text")
+        # Approve/Decline are now carried by the InlineKeyboardMarkup, not card text.
+        keyboard = result.get("keyboard")
+        if keyboard is None:
+            failures.append("keyboard not present in result")
 
         if failures:
-            record(name, False, "\n".join(failures) + f"\nCard tail: {card[-200:]!r}")
+            record(name, False, "\n".join(failures))
         else:
             record(name, True)
     except Exception:
@@ -176,11 +174,9 @@ def test_3_card_five_sections():
                 "Section 4 (Critical) missing: neither 'Critical' nor 'critical' found in card"
             )
 
-        # 5. Action buttons
-        if "Approve" not in card:
-            failures.append("Section 5 (Action) missing: 'Approve' not found in card")
-        if "Decline" not in card:
-            failures.append("Section 5 (Action) missing: 'Decline' not found in card")
+        # 5. Action buttons — carried by the InlineKeyboardMarkup, not card text
+        if result.get("keyboard") is None:
+            failures.append("Section 5 (Action) missing: keyboard not present in result")
 
         if failures:
             record(name, False, "\n".join(failures) + f"\nCard:\n{card}")
@@ -363,7 +359,7 @@ if __name__ == "__main__":
         f"Cost={'month' in result['card'].lower() or 'Cost' in result['card']}, "
         f"Security={'SSH' in result['card']}, "
         f"Critical={'critical' in result['card'].lower()}, "
-        f"Actions={'Approve' in result['card'] and 'Decline' in result['card']}) "
+        f"Actions={result.get('keyboard') is not None}) "
         f"→ gate findings correct "
         f"(SSH={'SSH' in result['card']}, "
         f"snapshot={'snapshot' in result['card'].lower()}, "

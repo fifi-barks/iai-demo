@@ -137,6 +137,7 @@ def process_intent(
 
     return {
         "card": result["card"],
+        "keyboard": result.get("keyboard"),
         "raw": result["raw"],
         "approve_label": APPROVE_LABEL,
         "decline_label": DECLINE_LABEL,

@@ -11,7 +11,7 @@ and replies with a synthesized approval card + Approve/Decline buttons.
 import logging
 import os
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import Update
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -21,7 +21,7 @@ from telegram.ext import (
     filters,
 )
 
-from bot.intent_handler import APPROVE_LABEL, DECLINE_LABEL, handle_approval, process_intent
+from bot.intent_handler import handle_approval, process_intent
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -47,16 +47,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     ack = await update.message.reply_text("Reading the manifest and running the gates…")
 
     result = process_intent(intent)
-    card = result["card"]
-
-    keyboard = [[
-        InlineKeyboardButton(APPROVE_LABEL, callback_data="approve"),
-        InlineKeyboardButton(DECLINE_LABEL, callback_data="decline"),
-    ]]
     # Edit the ack message to show the card (keeps chat tidy; the ack becomes the card)
     await ack.edit_text(
-        f"```\n{card}\n```",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        f"```\n{result['card']}\n```",
+        reply_markup=result["keyboard"],
         parse_mode="MarkdownV2",
     )
 

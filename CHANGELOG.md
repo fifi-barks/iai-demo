@@ -1,4 +1,4 @@
-cat << 'EOF' > ~/iai-demo-seed/CHANGELOG.md
+
 # Changelog — iai-demo
 
 All notable changes to this project will be documented in this file.
@@ -26,4 +26,3 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 Future enhancements to be determined.
-EOF

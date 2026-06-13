@@ -55,16 +55,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     )
 
 
-async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def handle_decline(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
-    if query.data == "approve":
-        await query.edit_message_text(
-            "✅ Approved — infrastructure apply queued.\n"
-            "(Apply + manifest auto-update: Milestone 4)"
-        )
-    else:
-        await query.edit_message_text("❌ Declined — no changes applied.")
+    await query.edit_message_text("❌ Declined — no changes applied.")
 
 
 def main() -> None:
@@ -73,7 +67,7 @@ def main() -> None:
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(handle_approval, pattern="^approve$"))
-    app.add_handler(CallbackQueryHandler(handle_callback))
+    app.add_handler(CallbackQueryHandler(handle_decline, pattern="^decline$"))
     logger.info("IAI bot polling…")
     app.run_polling()
 

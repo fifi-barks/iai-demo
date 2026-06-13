@@ -185,7 +185,7 @@ def apply_infrastructure(terraform_dir: str, snapshot_dir: str) -> dict:
 
     # --- plan (surface changes; fail fast before touching real infra) ---
     plan = subprocess.run(
-        ["tofu", "plan", "-no-color"],
+        ["tofu", "plan", "-no-color", "-lock=false"],
         cwd=terraform_dir,
         capture_output=True,
         text=True,

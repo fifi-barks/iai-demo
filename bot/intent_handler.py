@@ -1,6 +1,6 @@
 """Intent handler — Telegram-free core of the IAI bot.
 
-Receives a plain-language intent string, sends it to a local Mistral 7B model
+Receives a plain-language intent string, sends it to a local phi 7B model
 via Ollama to extract structured infrastructure requirements, then runs the full
 pipeline: manifest read → IaC generate → three gates → synthesized approval card.
 
@@ -59,7 +59,7 @@ User request: {user_message}"""
 
 
 def process_intent_with_ollama(user_message: str) -> dict:
-    """Send a plain-language intent to Ollama/Mistral and extract structured requirements.
+    """Send a plain-language intent to Ollama/phi and extract structured requirements.
 
     Args:
         user_message: The raw intent text from the user.
@@ -115,7 +115,7 @@ def process_intent(
 ) -> dict:
     """Process a plain-language intent and return the pipeline result.
 
-    Sends the intent through Ollama/Mistral first to extract structured
+    Sends the intent through Ollama/phi first to extract structured
     requirements, then runs the full gate pipeline.
 
     Returns:
@@ -125,7 +125,7 @@ def process_intent(
             "approve_label": str,   # button label for Approve
             "decline_label": str,   # button label for Decline
             "intent": str,          # the original intent text, echoed back
-            "parsed_intent": dict,  # structured requirements from Mistral
+            "parsed_intent": dict,  # structured requirements from phi
         }
     """
     parsed_intent = process_intent_with_ollama(intent_text)

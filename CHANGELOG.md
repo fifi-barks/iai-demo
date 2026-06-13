@@ -1,4 +1,4 @@
-cat << 'EOF' > CHANGELOG.md
+
 # Changelog — iai-demo
 
 All notable changes to this project will be documented in this file.
@@ -19,20 +19,10 @@ All notable changes to this project will be documented in this file.
 - Criticality tagging (transitive through dependency graph)
 - No clarification engine in v1
 - No Ansible in v1 (declared out-of-scope)
-
-### Demo Scenario
-- Intent: Stand up staging environment for payments service
-- Clouds: AWS ap-southeast-5 (KL) + GCP asia-southeast1 (Singapore)
-- Resources: ~7-8 (VPC, subnet, RDS, app tier, security groups, bucket)
-- Security catch: app-tier SG open to 0.0.0.0/0 on port 22 (CKV_AWS_24)
+- Keyless credentials (no static keys in codebase or environment)
 
 ---
 
-## [Unreleased] — Future releases
-- Phase 4: Demo video recording
-- WP#2 (SecOps deep dive)
-- WP#3 (FinOps deep dive)
-- Full autonomous apply (progressive autonomy)
-- Clarification engine
-- Physical hardware (Cisco) support
-EOF
+## [Unreleased]
+
+Future enhancements to be determined.

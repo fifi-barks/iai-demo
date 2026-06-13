@@ -13,6 +13,8 @@ import logging
 import os
 
 import requests
+from telegram import Update
+from telegram.ext import ContextTypes
 
 logger = logging.getLogger(__name__)
 
@@ -141,3 +143,37 @@ def process_intent(
         "intent": intent_text,
         "parsed_intent": parsed_intent,
     }
+
+
+async def handle_approval(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Telegram callback handler for the Approve button (callback_data="approve").
+
+    Register with:
+        application.add_handler(CallbackQueryHandler(handle_approval, pattern="^approve$"))
+    """
+    from agent.pipeline import (
+        TERRAFORM_GENERATED_DIR,
+        TERRAFORM_SNAPSHOT_DIR,
+        apply_infrastructure,
+        snapshot_data_bearing_resources,
+        update_manifest_after_apply,
+    )
+
+    query = update.callback_query
+    await query.answer()
+
+    try:
+        apply_result = apply_infrastructure(TERRAFORM_GENERATED_DIR, TERRAFORM_SNAPSHOT_DIR)
+
+        with open(apply_result["state_snapshot_path"]) as fh:
+            before_state = json.load(fh)
+        snapshot_data_bearing_resources(MANIFEST_PATH, before_state)
+
+        tfstate_path = os.path.join(TERRAFORM_GENERATED_DIR, "terraform.tfstate")
+        update_manifest_after_apply(MANIFEST_PATH, tfstate_path)
+
+        await query.edit_message_text("✓ Infrastructure applied successfully. Manifest updated.")
+
+    except Exception as exc:
+        logger.error("Approval handler failed: %s", exc)
+        await query.edit_message_text(f"✗ Apply failed: {exc}")

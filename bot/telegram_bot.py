@@ -21,7 +21,7 @@ from telegram.ext import (
     filters,
 )
 
-from bot.intent_handler import APPROVE_LABEL, DECLINE_LABEL, process_intent
+from bot.intent_handler import APPROVE_LABEL, DECLINE_LABEL, handle_approval, process_intent
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -78,6 +78,7 @@ def main() -> None:
     app = Application.builder().token(token).build()
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(CallbackQueryHandler(handle_approval, pattern="^approve$"))
     app.add_handler(CallbackQueryHandler(handle_callback))
     logger.info("IAI bot polling…")
     app.run_polling()

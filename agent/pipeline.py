@@ -37,6 +37,10 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _GENERATED_DIR = os.path.join(_REPO_ROOT, "terraform", "generated")
 _STAGING_DIR = os.path.join(_REPO_ROOT, "terraform", "staging")
 
+# Public paths used by the bot's approval handler.
+TERRAFORM_GENERATED_DIR = _GENERATED_DIR
+TERRAFORM_SNAPSHOT_DIR = os.path.join(_REPO_ROOT, "terraform", "snapshots")
+
 # Files copied from the staging module so checkov / terraform see a complete
 # module (providers + variables) alongside the generated main.tf.
 _SUPPORT_FILES = ["providers.tf", "variables.tf"]
@@ -288,6 +292,49 @@ def snapshot_data_bearing_resources(manifest_path: str, before_state: dict) -> d
         "snapshots": snapshots,
         "status": "success" if snapshots else "skipped",
     }
+
+
+def update_manifest_after_apply(manifest_path: str, tfstate_path: str) -> None:
+    """Stamp each provisioned resource in the manifest with its TF resource ID and apply time.
+
+    Reads the post-apply tfstate and updates only the state: block fields
+    (status, resource_id, last_applied) via ManifestReader so all human
+    comments survive. Environments marked out-of-scope-v1 are skipped.
+    """
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    tf_resources: dict[str, dict] = {}
+    if os.path.exists(tfstate_path):
+        with open(tfstate_path) as fh:
+            tfstate = json.load(fh)
+        for res in tfstate.get("resources", []):
+            instances = res.get("instances", [])
+            if instances:
+                tf_resources[res.get("name", "")] = instances[0].get("attributes", {})
+
+    reader = ManifestReader(manifest_path)
+    for env in reader.get_environments():
+        # pylint: disable=protected-access
+        env_data = reader._environment(env)
+        if env_data.get("scope") == "out-of-scope-v1":
+            continue
+        resources = reader.get_resources(env)
+        for resource_name, resource_data in resources.items():
+            if "state" not in resource_data:
+                continue
+            tf_name = resource_name.replace("-", "_")
+            updates: dict = {"status": "applied", "last_applied": timestamp}
+            attrs = tf_resources.get(tf_name, {})
+            resource_id = attrs.get("id") or attrs.get("identifier")
+            if resource_id:
+                updates["resource_id"] = resource_id
+            if "endpoint" in resource_data.get("state", {}):
+                endpoint = attrs.get("endpoint") or attrs.get("address")
+                if endpoint:
+                    updates["endpoint"] = endpoint
+            reader.update_resource_state(env, resource_name, updates)
+
+    reader.write()
 
 
 def main(argv=None):

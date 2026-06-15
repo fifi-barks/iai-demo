@@ -161,6 +161,7 @@ async def handle_approval(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     )
 
     query = update.callback_query
+    logger.info("Approval callback received; applying infrastructure…")
     await query.answer()
 
     try:

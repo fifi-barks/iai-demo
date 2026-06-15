@@ -43,6 +43,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     intent = update.message.text
+    logger.info(f"Intent received: {intent[:60]}...")
     # Acknowledge immediately so the user knows we're working
     ack = await update.message.reply_text("Reading the manifest and running the gates…")
 

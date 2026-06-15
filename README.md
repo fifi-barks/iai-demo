@@ -1,6 +1,8 @@
-# iai-demo
+# iai-demo — v1 (AWS-only)
 
-A proof-of-concept of **Infrastructure as Intent (IAI)** — an AI agent that takes a plain-language business request, generates multi-cloud infrastructure code, validates it through three automated gates, and asks a human to approve a plain-English summary before applying anything.
+A proof-of-concept of **Infrastructure as Intent (IAI)** — an AI agent that takes a plain-language business request, generates infrastructure-as-code, validates it through three automated gates, and asks a human to approve a plain-English summary before applying anything.
+
+**v1 focuses on AWS** for a clean, polished demo. Multi-cloud support (GCP, Ansible) deferred to v2.
 
 ## What it does
 
@@ -16,29 +18,41 @@ One sentence in via Telegram → the agent:
 5. Waits for **[ Approve ] / [ Decline ]**
 6. On approval: takes a state snapshot, takes a native RDS snapshot for data-bearing resources, runs `tofu apply`, updates the manifest
 
-## The demo scenario
+## The demo scenario (v1: AWS-only)
 
 **Intent prompt:**
-> "Stand up a staging environment for the payments service: a managed Postgres, an app compute tier, and a private network in AWS, plus an object-storage bucket in GCP for export files. Tag it staging, owner payments-team."
+> "Set up a staging environment for the payments service: a managed Postgres database, an app tier, and a private VPC. Tag it staging, owner payments-team."
 
-**Resources provisioned:** AWS VPC · private subnet · RDS Postgres (data-bearing, critical) · EC2 app tier (inherits critical via dependency) · GCP storage bucket · IAM + security groups (~7–8 resources total)
+**Resources provisioned:** AWS VPC · 2 private subnets (multi-AZ) · RDS Postgres (data-bearing, critical) · EC2 app tier (inherits critical via dependency) · security groups (~6 resources total)
 
 **What the gates catch:**
-- Security: the generated app-tier security group allows inbound from `0.0.0.0/0` — flagged (CKV_AWS_24); summary states ingress restricted to the VPC CIDR. RDS encryption-at-rest on, not publicly accessible — both pass.
-- Cost: Infracost estimate with RDS as the dominant line item; one number, one driver named.
-- Plan: 7 resources to add, 0 to change, 0 to destroy; critical resources flagged.
+- **Security:** App-tier security group allows SSH inbound from `0.0.0.0/0` — flagged (CKV_AWS_24); approval summary states ingress restricted to VPC CIDR. RDS encryption-at-rest and private access both pass.
+- **Cost:** Infracost estimate with RDS as the dominant monthly cost driver.
+- **Plan:** 6 resources to add, 0 to change, 0 to destroy; critical resources highlighted.
 
 **The approval card the human sees:**
-> 7 resources across AWS + GCP · ~$X/mo · 1 issue caught and fixed — app tier restricted to VPC · payments-db + app-tier tagged critical, snapshot before apply · **[ Approve ] [ Decline ]**
+```
+Staging environment for payments — ready to build
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Resources: 6 across AWS (6 to add · 0 to change · 0 to destroy)
+• Cost: ~$45/month (db.t3.small)
+• Security: 1 issue caught — app tier would have been open to 0.0.0.0/0 on SSH.
+            Ingress restricted to the VPC CIDR.
+• Critical: payments-db [data-bearing — snapshot before apply]
+            app-tier [depends on payments-db]
+```
 
-## Clouds & regions
+**On approve:** State snapshot → RDS snapshot → `tofu apply` → manifest auto-updates.
+
+## Cloud & region
 
 | Cloud | Region | Auth |
 |-------|--------|------|
-| AWS | `ap-southeast-5` (Kuala Lumpur) | EC2 instance role via IMDSv2 |
-| GCP | `asia-southeast1` (Singapore) | Workload Identity Federation |
+| AWS | `ap-southeast-5` (Kuala Lumpur, Malaysia) | EC2 instance role via IMDSv2 |
 
-No static credentials anywhere in the codebase.
+**v1 is AWS-only.** Multi-cloud support (GCP, physical hardware) planned for v2.
+
+No static credentials anywhere in the codebase; all auth via instance metadata service.
 
 ## Repo layout
 

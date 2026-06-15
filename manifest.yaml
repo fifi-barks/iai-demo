@@ -1,24 +1,22 @@
-# Platform Manifest — payments service, v1
-# Why: staging environment for the payments service spanning AWS (network + data + compute)
-# and GCP (export storage). Mirrors prod topology at reduced scale; provisioned greenfield.
+# Platform Manifest — payments service, v1 (AWS-only)
+# Why: staging environment for the payments service: VPC, managed Postgres (data-bearing),
+# and app-tier compute. Demonstrates multi-AZ resilience, security scanning, cost estimation,
+# and criticality-based data snapshots. Greenfield provisioning via OpenTofu.
 #
-# Auto-update note: the agent rewrites only `state:` blocks after apply.
+# Auto-update note: agent rewrites only `state:` blocks after apply.
 # All other fields and comments are human-owned. Library: ruamel.yaml.
+# Multi-cloud support (GCP, etc.) deferred to v2.
 
 manifest_version: "1"
 
 environments:
 
   staging:
-    # Why: isolated staging environment for the payments service.
+    # Why: isolated staging environment for payments service — reduced-scale mirror of prod.
     engine: opentofu
-    clouds: [aws, gcp]
+    clouds: [aws]
     regions:
-      aws: ap-southeast-5      # Kuala Lumpur, Malaysia — default for all AWS resources
-      gcp: asia-southeast1     # Singapore — default for all GCP resources
-    # Note: GCP uses 'labels' where AWS uses 'tags'. The agent normalises both from the
-    # intent prompt before generating IaC — the on-camera contrast demonstrates the
-    # normalization layer without extra narration.
+      aws: ap-southeast-5      # Kuala Lumpur, Malaysia
     tags:
       environment: staging
       owner: payments-team
@@ -70,23 +68,3 @@ environments:
           resource_id: ~
           last_applied: ~
 
-      export-bucket:
-        # Why: GCP object-storage bucket for payments export files.
-        # Deliberately cross-cloud to demonstrate multi-cloud normalisation on camera.
-        # Must NOT default to public-read — security gate flags this as a critical finding.
-        cloud: gcp
-        type: google_storage_bucket
-        criticality: high
-        depends_on: []
-        # Agent-maintained — do not edit:
-        state:
-          status: pending
-          resource_id: ~         # bucket name after apply
-          last_applied: ~
-
-  edge-network:
-    # Why: physical Cisco switching layer. Declared for architectural completeness;
-    # not built in demo v1 — switches can't be filmed.
-    # Revisit for v2 if a physical networking leg is added.
-    engine: ansible
-    scope: out-of-scope-v1

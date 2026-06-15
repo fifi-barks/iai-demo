@@ -2,12 +2,13 @@
 
 Reads the platform manifest (via ManifestReader), enforces the greenfield
 criticality contract, resolves effective (transitive) criticality, and renders
-OpenTofu HCL for every in-scope resource. Each resource name maps to a
-dedicated renderer; criticality is injected into the AWS `tags` block or the
-GCP `labels` block as appropriate.
+OpenTofu HCL for AWS resources. Each resource name maps to a dedicated renderer;
+criticality is injected into AWS `tags` blocks.
 
 Library scope: stdlib + ruamel.yaml only (ManifestReader pulls in ruamel.yaml).
 This module is a library: no CLI entry point.
+
+v1: AWS-only. Multi-cloud support deferred to v2.
 """
 
 import os
@@ -32,7 +33,6 @@ class IaCGenerator:
             "payments-vpc": self._render_payments_vpc,
             "payments-db": self._render_payments_db,
             "app-tier": self._render_app_tier,
-            "export-bucket": self._render_export_bucket,
         }
 
     def validate_greenfield(self) -> None:
@@ -76,15 +76,6 @@ class IaCGenerator:
             "  }"
         )
 
-    def _gcp_labels(self, criticality: str) -> str:
-        return (
-            "  labels = {\n"
-            "    environment = var.environment\n"
-            '    owner       = "payments-team"\n'
-            f'    criticality = "{criticality}"\n'
-            "  }"
-        )
-
     # --- Renderers ----------------------------------------------------------
 
     def _render_payments_vpc(self, name: str, resource: dict, criticality: str) -> str:
@@ -96,10 +87,21 @@ class IaCGenerator:
             f"{self._aws_tags(criticality)}\n"
             "}"
         )
-        subnet = (
-            'resource "aws_subnet" "payments_private" {\n'
+        subnet_az1 = (
+            'resource "aws_subnet" "payments_private_az1" {\n'
             f"  vpc_id                  = aws_vpc.{tf}.id\n"
             '  cidr_block              = "10.0.1.0/24"\n'
+            '  availability_zone       = "ap-southeast-5a"\n'
+            "  map_public_ip_on_launch = false\n"
+            "\n"
+            f"{self._aws_tags(criticality)}\n"
+            "}"
+        )
+        subnet_az2 = (
+            'resource "aws_subnet" "payments_private_az2" {\n'
+            f"  vpc_id                  = aws_vpc.{tf}.id\n"
+            '  cidr_block              = "10.0.2.0/24"\n'
+            '  availability_zone       = "ap-southeast-5b"\n'
             "  map_public_ip_on_launch = false\n"
             "\n"
             f"{self._aws_tags(criticality)}\n"
@@ -108,12 +110,12 @@ class IaCGenerator:
         subnet_group = (
             'resource "aws_db_subnet_group" "payments" {\n'
             '  name       = "payments-staging"\n'
-            "  subnet_ids = [aws_subnet.payments_private.id]\n"
+            "  subnet_ids = [aws_subnet.payments_private_az1.id, aws_subnet.payments_private_az2.id]\n"
             "\n"
             f"{self._aws_tags(criticality)}\n"
             "}"
         )
-        return "\n\n".join([vpc, subnet, subnet_group])
+        return "\n\n".join([vpc, subnet_az1, subnet_az2, subnet_group])
 
     def _render_payments_db(self, name: str, resource: dict, criticality: str) -> str:
         tf = _tf_name(name)
@@ -161,7 +163,7 @@ class IaCGenerator:
             f'resource "aws_instance" "{tf}_instance" {{\n'
             "  ami                    = var.app_tier_ami\n"
             '  instance_type          = "t3.micro"\n'
-            "  subnet_id              = aws_subnet.payments_private.id\n"
+            "  subnet_id              = aws_subnet.payments_private_az1.id\n"
             f"  vpc_security_group_ids = [aws_security_group.{tf}.id]\n"
             "\n"
             f"{self._aws_tags(criticality)}\n"
@@ -169,15 +171,3 @@ class IaCGenerator:
         )
         return sg + "\n" + instance
 
-    def _render_export_bucket(self, name: str, resource: dict, criticality: str) -> str:
-        tf = _tf_name(name)
-        return (
-            f'resource "google_storage_bucket" "{tf}" {{\n'
-            '  name                        = "payments-staging-exports"\n'
-            '  location                    = "asia-southeast1"\n'
-            "  uniform_bucket_level_access = true\n"
-            '  public_access_prevention    = "enforced"\n'
-            "\n"
-            f"{self._gcp_labels(criticality)}\n"
-            "}"
-        )

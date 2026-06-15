@@ -15,9 +15,22 @@ resource "aws_vpc" "payments_vpc" {
   }
 }
 
-resource "aws_subnet" "payments_private" {
+resource "aws_subnet" "payments_private_az1" {
   vpc_id                  = aws_vpc.payments_vpc.id
   cidr_block              = "10.0.1.0/24"
+  availability_zone       = "ap-southeast-5a"
+  map_public_ip_on_launch = false
+
+  tags = {
+    environment = var.environment
+    owner       = "payments-team"
+  }
+}
+
+resource "aws_subnet" "payments_private_az2" {
+  vpc_id                  = aws_vpc.payments_vpc.id
+  cidr_block              = "10.0.2.0/24"
+  availability_zone       = "ap-southeast-5b"
   map_public_ip_on_launch = false
 
   tags = {
@@ -28,7 +41,7 @@ resource "aws_subnet" "payments_private" {
 
 resource "aws_db_subnet_group" "payments" {
   name       = "payments-staging"
-  subnet_ids = [aws_subnet.payments_private.id]
+  subnet_ids = [aws_subnet.payments_private_az1.id, aws_subnet.payments_private_az2.id]
 
   tags = {
     environment = var.environment
@@ -81,22 +94,10 @@ resource "aws_security_group" "app_tier" {
 resource "aws_instance" "app_tier" {
   ami                    = var.app_tier_ami
   instance_type          = "t3.micro"
-  subnet_id              = aws_subnet.payments_private.id
+  subnet_id              = aws_subnet.payments_private_az1.id
   vpc_security_group_ids = [aws_security_group.app_tier.id]
 
   tags = {
-    environment = var.environment
-    owner       = "payments-team"
-  }
-}
-
-resource "google_storage_bucket" "export_bucket" {
-  name                        = "payments-staging-exports"
-  location                    = "asia-southeast1"
-  uniform_bucket_level_access = true
-  public_access_prevention    = "enforced"
-
-  labels = {
     environment = var.environment
     owner       = "payments-team"
   }

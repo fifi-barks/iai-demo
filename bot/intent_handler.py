@@ -119,12 +119,14 @@ def process_intent(
     """Process a plain-language intent and return the pipeline result.
 
     Sends the intent through Ollama/phi first to extract structured
-    requirements, then runs the full gate pipeline.
+    requirements, then routes to the appropriate pipeline based on
+    intent_type ("provision" | "modify" → provision; "destroy" → teardown).
 
     Returns:
         {
             "card": str,            # the full approval card text
-            "raw": dict,            # raw gate results (security, cost, plan)
+            "action": str,          # "provision" or "destroy"
+            "raw": dict | None,     # raw gate results (provision only)
             "approve_label": str,   # button label for Approve
             "decline_label": str,   # button label for Decline
             "intent": str,          # the original intent text, echoed back
@@ -132,14 +134,30 @@ def process_intent(
         }
     """
     parsed_intent = process_intent_with_ollama(intent_text)
+    intent_type = parsed_intent.get("intent_type", "provision")
 
+    if intent_type == "destroy":
+        from agent.pipeline import run_destroy_pipeline
+        result = run_destroy_pipeline(manifest_path)
+        return {
+            "card": result["card"],
+            "keyboard": None,
+            "raw": None,
+            "action": "destroy",
+            "approve_label": APPROVE_LABEL,
+            "decline_label": DECLINE_LABEL,
+            "intent": intent_text,
+            "parsed_intent": parsed_intent,
+        }
+
+    # "provision" or "modify" — both handled by the provision pipeline.
     from agent.pipeline import run_pipeline
     result = run_pipeline(manifest_path, infracost_fixture=infracost_fixture)
-
     return {
         "card": result["card"],
         "keyboard": result.get("keyboard"),
         "raw": result["raw"],
+        "action": "provision",
         "approve_label": APPROVE_LABEL,
         "decline_label": DECLINE_LABEL,
         "intent": intent_text,

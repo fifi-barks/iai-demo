@@ -72,13 +72,24 @@ def main() -> None:
         sys.exit(0)
 
     if answer in ("y", "yes"):
-        print("\nApplying infrastructure…")
-        try:
-            apply_and_finalize(TERRAFORM_GENERATED_DIR, TERRAFORM_SNAPSHOT_DIR, manifest)
-            print("✓ Infrastructure applied. Manifest updated.")
-        except Exception as exc:
-            print(f"✗ Apply failed: {exc}")
-            sys.exit(1)
+        action = result.get("action", "provision")
+        if action == "destroy":
+            print("\nDestroying infrastructure…")
+            try:
+                from agent.pipeline import destroy_and_reset
+                destroy_and_reset(TERRAFORM_GENERATED_DIR, manifest)
+                print("✓ Resources destroyed. Manifest reset to pending.")
+            except Exception as exc:
+                print(f"✗ Destroy failed: {exc}")
+                sys.exit(1)
+        else:
+            print("\nApplying infrastructure…")
+            try:
+                apply_and_finalize(TERRAFORM_GENERATED_DIR, TERRAFORM_SNAPSHOT_DIR, manifest)
+                print("✓ Infrastructure applied. Manifest updated.")
+            except Exception as exc:
+                print(f"✗ Apply failed: {exc}")
+                sys.exit(1)
     else:
         print("Declined — no changes applied.")
 

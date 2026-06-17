@@ -385,6 +385,111 @@ def update_manifest_after_apply(manifest_path: str, tfstate_path: str) -> None:
     reader.write()
 
 
+def _synthesize_destroy_card(resources: list[dict], env: str) -> str:
+    """Build a plain-text destroy preview card from manifest state.
+
+    Args:
+        resources: list of dicts with keys: name, resource_id, criticality, cloud.
+        env: environment name (e.g. "staging").
+
+    Returns:
+        Plain-text approval card string.
+    """
+    title = f"{env.capitalize()} environment — teardown plan"
+    sep = "━" * len(title)
+
+    count = len(resources)
+    noun = "resource" if count == 1 else "resources"
+    lines = [
+        title,
+        sep,
+        f"• Resources:  {count} {noun} to destroy (0 to add · 0 to change)",
+    ]
+    for r in resources:
+        rid = r.get("resource_id") or "unknown"
+        lines.append(
+            f"  ↳ {r['name']}  [{r['criticality']}]  ·  {r['cloud'].upper()}  ·  {rid}"
+        )
+    critical = [r["name"] for r in resources if r.get("criticality") == "critical"]
+    if critical:
+        names = ", ".join(critical)
+        lines.append(
+            f"• ⚠ Critical: {names} {'is' if len(critical) == 1 else 'are'} tagged "
+            "CRITICAL — teardown is irreversible."
+        )
+    lines.append("• Rollback:   None. Infrastructure cannot be recovered after destroy.")
+    return "\n".join(lines)
+
+
+def run_destroy_pipeline(manifest_path: str, env: str = "staging") -> dict:
+    """Build a destroy preview card from manifest state (no tofu required).
+
+    Returns:
+        {
+          "card": str,
+          "to_destroy": list[dict],   # resources with applied state
+        }
+    """
+    reader = ManifestReader(manifest_path)
+    resources = reader.get_resources(env)
+    criticality = reader.resolve_criticality(env)
+
+    to_destroy = []
+    for name, res in resources.items():
+        state = res.get("state", {})
+        to_destroy.append({
+            "name": name,
+            "resource_id": state.get("resource_id"),
+            "criticality": criticality.get(name, "unknown"),
+            "cloud": res.get("cloud", "unknown"),
+        })
+
+    card = _synthesize_destroy_card(to_destroy, env)
+    return {"card": card, "to_destroy": to_destroy}
+
+
+def destroy_and_reset(terraform_dir: str, manifest_path: str) -> dict:
+    """Run tofu destroy and reset all resource states in the manifest to pending.
+
+    Args:
+        terraform_dir: Directory containing .tf files and terraform.tfstate.
+        manifest_path: Path to the platform manifest YAML.
+
+    Returns:
+        {"status": "success", "output": str}
+
+    Raises:
+        RuntimeError: if tofu destroy exits non-zero or times out.
+    """
+    terraform_dir = os.path.abspath(terraform_dir)
+    logger.info("[DESTROY] Starting destroy_and_reset: terraform_dir=%s", terraform_dir)
+
+    # init first — providers must be available for destroy to work.
+    _run_tofu(["tofu", "init", "-upgrade", "-no-color"], terraform_dir, timeout=180)
+
+    proc = _run_tofu(
+        ["tofu", "destroy", "-auto-approve", "-no-color"],
+        terraform_dir,
+    )
+
+    # Reset every resource state back to pending.
+    reader = ManifestReader(manifest_path)
+    for env in reader.get_environments():
+        env_data = reader._environment(env)  # pylint: disable=protected-access
+        if env_data.get("scope") == "out-of-scope-v1":
+            continue
+        for resource_name in reader.get_resources(env):
+            reader.update_resource_state(
+                env,
+                resource_name,
+                {"status": "pending", "resource_id": None, "last_applied": None},
+            )
+    reader.write()
+
+    logger.info("[DESTROY] destroy_and_reset complete.")
+    return {"status": "success", "output": proc.stdout}
+
+
 def apply_and_finalize(terraform_dir: str, snapshot_dir: str, manifest_path: str) -> dict:
     """Run apply_infrastructure(), then snapshot data-bearing resources and
     update the manifest with the post-apply state.

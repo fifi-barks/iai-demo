@@ -48,6 +48,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     ack = await update.message.reply_text("Reading the manifest and running the gates…")
 
     result = process_intent(intent)
+    # Store the action type so handle_approval knows whether to provision or destroy.
+    context.user_data["pending_action"] = result.get("action", "provision")
     # Edit the ack message to show the card (keeps chat tidy; the ack becomes the card)
     await ack.edit_text(
         f"```\n{result['card']}\n```",

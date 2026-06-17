@@ -14,7 +14,7 @@ import logging
 import os
 
 import requests
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 logger = logging.getLogger(__name__)
@@ -143,9 +143,13 @@ def process_intent(
     if intent_type == "destroy":
         from agent.pipeline import run_destroy_pipeline
         result = run_destroy_pipeline(manifest_path)
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton(APPROVE_LABEL, callback_data="approve"),
+            InlineKeyboardButton(DECLINE_LABEL, callback_data="decline"),
+        ]])
         return {
             "card": result["card"],
-            "keyboard": None,
+            "keyboard": keyboard,
             "raw": None,
             "action": "destroy",
             "approve_label": APPROVE_LABEL,
@@ -175,28 +179,38 @@ async def handle_approval(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     Register with:
         application.add_handler(CallbackQueryHandler(handle_approval, pattern="^approve$"))
 
-    apply_and_finalize() is synchronous and can run for minutes (tofu plan +
-    apply, subject to APPLY_TIMEOUT_SECONDS). It's run via asyncio.to_thread()
-    so it doesn't block the bot's event loop — without this, a slow or hung
-    apply freezes the whole bot and the user never gets a response, success
-    or failure.
-    """
-    from agent.pipeline import (
-        TERRAFORM_GENERATED_DIR,
-        TERRAFORM_SNAPSHOT_DIR,
-        apply_and_finalize,
-    )
+    Routes to apply_and_finalize() or destroy_and_reset() depending on the
+    pending_action stored in context.user_data during handle_message().
 
+    Both apply_and_finalize() and destroy_and_reset() are synchronous and can
+    run for several minutes. Run via asyncio.to_thread() so they don't block
+    the bot's event loop.
+    """
     query = update.callback_query
-    logger.info("Approval callback received; applying infrastructure…")
     await query.answer()
 
-    try:
-        await asyncio.to_thread(
-            apply_and_finalize, TERRAFORM_GENERATED_DIR, TERRAFORM_SNAPSHOT_DIR, MANIFEST_PATH
-        )
-        await query.edit_message_text("✓ Infrastructure applied successfully. Manifest updated.")
+    action = context.user_data.get("pending_action", "provision")
+    logger.info("Approval callback received; action=%s", action)
 
-    except Exception as exc:
-        logger.error("Approval handler failed: %s", exc)
-        await query.edit_message_text(f"✗ Apply failed: {exc}")
+    if action == "destroy":
+        from agent.pipeline import TERRAFORM_GENERATED_DIR, destroy_and_reset
+        try:
+            await asyncio.to_thread(destroy_and_reset, TERRAFORM_GENERATED_DIR, MANIFEST_PATH)
+            await query.edit_message_text("✓ Infrastructure destroyed. Manifest reset to pending.")
+        except Exception as exc:
+            logger.error("Destroy handler failed: %s", exc)
+            await query.edit_message_text(f"✗ Destroy failed: {exc}")
+    else:
+        from agent.pipeline import (
+            TERRAFORM_GENERATED_DIR,
+            TERRAFORM_SNAPSHOT_DIR,
+            apply_and_finalize,
+        )
+        try:
+            await asyncio.to_thread(
+                apply_and_finalize, TERRAFORM_GENERATED_DIR, TERRAFORM_SNAPSHOT_DIR, MANIFEST_PATH
+            )
+            await query.edit_message_text("✓ Infrastructure applied successfully. Manifest updated.")
+        except Exception as exc:
+            logger.error("Approval handler failed: %s", exc)
+            await query.edit_message_text(f"✗ Apply failed: {exc}")

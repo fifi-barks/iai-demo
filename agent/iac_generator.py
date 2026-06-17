@@ -133,10 +133,14 @@ class IaCGenerator:
         return sg + "\n" + instance
 
     def _render_export_bucket(self, name: str, resource: dict, criticality: str) -> str:
+        # Name is declared explicitly in the manifest so it's visible and auditable there.
+        # Fall back to the iai-export-{environment} convention if not set.
+        bucket_name = resource.get("name") or f"iai-export-${{var.environment}}"
         return (
             "# GCS export bucket. Uniform bucket-level access is enforced (CKV_GCP_29 passes).\n"
+            '# Bucket name sourced from manifest.yaml (export-bucket.name).\n'
             'resource "google_storage_bucket" "export_bucket" {\n'
-            '  name          = "iai-export-${var.environment}"\n'
+            f'  name          = "{bucket_name}"\n'
             '  location      = "ASIA-SOUTHEAST1"\n'
             "  force_destroy = true\n"
             "\n"

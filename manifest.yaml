@@ -41,6 +41,9 @@ environments:
       export-bucket:
         # Why: GCS bucket for payment export files. High (not critical) — read-heavy,
         # no transaction data. Uniform bucket-level access is enforced (CKV_GCP_29 passes).
+        # Naming convention: iai-export-{environment}. Declared here so the name is
+        # visible and auditable from the manifest, not buried in the generator.
+        name: iai-export-staging
         cloud: gcp
         type: google_storage_bucket
         criticality: high

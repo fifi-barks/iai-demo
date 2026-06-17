@@ -194,23 +194,25 @@ async def handle_approval(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     if action == "destroy":
         from agent.pipeline import TERRAFORM_GENERATED_DIR, destroy_and_reset
+        await query.edit_message_text("🔴 Tearing down infrastructure… this takes 1–2 minutes.")
         try:
             await asyncio.to_thread(destroy_and_reset, TERRAFORM_GENERATED_DIR, MANIFEST_PATH)
-            await query.edit_message_text("✓ Infrastructure destroyed. Manifest reset to pending.")
+            await query.edit_message_text("✅ Done — infrastructure destroyed. Manifest reset to pending.")
         except Exception as exc:
             logger.error("Destroy handler failed: %s", exc)
-            await query.edit_message_text(f"✗ Destroy failed: {exc}")
+            await query.edit_message_text(f"❌ Destroy failed: {exc}")
     else:
         from agent.pipeline import (
             TERRAFORM_GENERATED_DIR,
             TERRAFORM_SNAPSHOT_DIR,
             apply_and_finalize,
         )
+        await query.edit_message_text("⚙️ Applying infrastructure… this takes 1–2 minutes.")
         try:
             await asyncio.to_thread(
                 apply_and_finalize, TERRAFORM_GENERATED_DIR, TERRAFORM_SNAPSHOT_DIR, MANIFEST_PATH
             )
-            await query.edit_message_text("✓ Infrastructure applied successfully. Manifest updated.")
+            await query.edit_message_text("✅ Done — infrastructure applied. Manifest updated.")
         except Exception as exc:
             logger.error("Approval handler failed: %s", exc)
-            await query.edit_message_text(f"✗ Apply failed: {exc}")
+            await query.edit_message_text(f"❌ Apply failed: {exc}")

@@ -60,8 +60,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def handle_decline(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    await query.answer()
-    await query.edit_message_text("❌ Declined — no changes applied.")
+    await query.answer("Cancelled.")
+    await query.edit_message_text("🚫 Declined — no changes applied.")
 
 
 def main() -> None:

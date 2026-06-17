@@ -102,9 +102,13 @@ def process_intent_with_ollama(user_message: str) -> dict:
     except requests.exceptions.RequestException as exc:
         logger.warning("Ollama request failed (%s) — using passthrough intent", exc)
 
-    # Fallback: minimal structured intent inferred from the raw message.
+    # Fallback: infer intent_type from keywords in the raw message so that
+    # "tear down" / "destroy" still routes correctly even when Ollama fails.
+    _DESTROY_KEYWORDS = {"tear down", "teardown", "destroy", "decommission", "delete", "remove", "clean up", "cleanup"}
+    lower = user_message.lower()
+    fallback_type = "destroy" if any(kw in lower for kw in _DESTROY_KEYWORDS) else "provision"
     return {
-        "intent_type": "provision",
+        "intent_type": fallback_type,
         "resources": [],
         "clouds": [],
         "requirements": {"environment": "staging", "criticality": "high", "data_bearing": False, "tags": {}},

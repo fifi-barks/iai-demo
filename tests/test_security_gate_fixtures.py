@@ -3,11 +3,16 @@
 For every watched check, asserts:
   - known-bad file => status="fail" (no false negatives)
   - known-good file => status="pass" (no false positives)
-  - result dict always contains `trivy_findings` key (even when Trivy absent)
+  - result dict always contains `trivy_config_findings` key (even when Trivy absent)
   - result dict always contains `trivy_available` key
 
 These tests are independent of the pipeline; they call the gate's library
 entry point (run_file) directly.
+
+Watched checks (v2):
+  CKV_AWS_24 — security group allows ingress from 0.0.0.0/0 to port 22 (SSH)
+  CKV_AWS_79 — EC2 instance does not enforce IMDSv2 (http_tokens = "required")
+  CKV_GCP_29 — GCS bucket does not use uniform bucket-level access
 
 Run from repo root:
     .venv/bin/python tests/test_security_gate_fixtures.py
@@ -51,12 +56,12 @@ def _check(fixture_filename, expected_status, label):
                 f"expected status={expected_status!r}, got {result.get('status')!r}"
             )
 
-        # trivy_findings must exist (may be empty list when Trivy absent)
-        if "trivy_findings" not in result:
-            failures.append("result dict missing 'trivy_findings' key")
-        elif not isinstance(result["trivy_findings"], list):
+        # trivy_config_findings must exist (may be empty list when Trivy absent)
+        if "trivy_config_findings" not in result:
+            failures.append("result dict missing 'trivy_config_findings' key")
+        elif not isinstance(result["trivy_config_findings"], list):
             failures.append(
-                f"trivy_findings must be a list, got {type(result['trivy_findings'])}"
+                f"trivy_config_findings must be a list, got {type(result['trivy_config_findings'])}"
             )
 
         # trivy_available must exist and be a bool
@@ -86,14 +91,14 @@ def test_sg_open_ingress_bad():
            "KNOWN-BAD: SG SSH open ingress => must FAIL (CKV_AWS_24)")
 
 
-def test_rds_encryption_bad():
-    _check("sec_rds_encryption_bad.tf", "fail",
-           "KNOWN-BAD: RDS encryption disabled => must FAIL (CKV_AWS_16)")
+def test_ec2_imdsv2_bad():
+    _check("sec_ec2_imdsv2_bad.tf", "fail",
+           "KNOWN-BAD: EC2 IMDSv2 not enforced => must FAIL (CKV_AWS_79)")
 
 
-def test_rds_public_access_bad():
-    _check("sec_rds_public_access_bad.tf", "fail",
-           "KNOWN-BAD: RDS publicly accessible => must FAIL (CKV_AWS_17)")
+def test_gcs_uniform_access_bad():
+    _check("sec_gcs_uniform_access_bad.tf", "fail",
+           "KNOWN-BAD: GCS bucket without uniform bucket access => must FAIL (CKV_GCP_29)")
 
 
 # ---------------------------------------------------------------------------
@@ -104,14 +109,14 @@ def test_sg_open_ingress_good():
            "KNOWN-GOOD: SG SSH restricted to VPC => must PASS (CKV_AWS_24)")
 
 
-def test_rds_encryption_good():
-    _check("sec_rds_encryption_good.tf", "pass",
-           "KNOWN-GOOD: RDS encrypted at rest => must PASS (CKV_AWS_16)")
+def test_ec2_imdsv2_good():
+    _check("sec_ec2_imdsv2_good.tf", "pass",
+           "KNOWN-GOOD: EC2 IMDSv2 enforced => must PASS (CKV_AWS_79)")
 
 
-def test_rds_public_access_good():
-    _check("sec_rds_public_access_good.tf", "pass",
-           "KNOWN-GOOD: RDS not publicly accessible => must PASS (CKV_AWS_17)")
+def test_gcs_uniform_access_good():
+    _check("sec_gcs_uniform_access_good.tf", "pass",
+           "KNOWN-GOOD: GCS bucket with uniform bucket access => must PASS (CKV_GCP_29)")
 
 
 # ---------------------------------------------------------------------------
@@ -119,14 +124,14 @@ def test_rds_public_access_good():
 # ---------------------------------------------------------------------------
 def test_sg_new_resource_type_trivy_keys():
     """sec_sg_new_resource_type.tf may or may not fail (known coverage gap).
-    This test only asserts the trivy_findings and trivy_available keys exist."""
+    This test only asserts the trivy_config_findings and trivy_available keys exist."""
     path = os.path.join(FIXTURES, "sec_sg_new_resource_type.tf")
-    name = "EDGE-CASE: aws_vpc_security_group_ingress_rule — trivy_findings key present"
+    name = "EDGE-CASE: aws_vpc_security_group_ingress_rule — trivy_config_findings key present"
     try:
         result = run_file(path)
         failures = []
-        if "trivy_findings" not in result:
-            failures.append("result dict missing 'trivy_findings' key")
+        if "trivy_config_findings" not in result:
+            failures.append("result dict missing 'trivy_config_findings' key")
         if "trivy_available" not in result:
             failures.append("result dict missing 'trivy_available' key")
         if failures:
@@ -147,11 +152,11 @@ if __name__ == "__main__":
     print()
 
     test_sg_open_ingress_bad()
-    test_rds_encryption_bad()
-    test_rds_public_access_bad()
+    test_ec2_imdsv2_bad()
+    test_gcs_uniform_access_bad()
     test_sg_open_ingress_good()
-    test_rds_encryption_good()
-    test_rds_public_access_good()
+    test_ec2_imdsv2_good()
+    test_gcs_uniform_access_good()
     test_sg_new_resource_type_trivy_keys()
 
     print()

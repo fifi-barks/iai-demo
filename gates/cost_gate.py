@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Cost gate for the IAI demo.
 
-Reconciles the Infracost monthly estimate for the payments staging RDS instance
+Reconciles the Infracost monthly estimate for the app-tier EC2 instance
 against the FinOps reference figure. The agent surfaces a synthesized result;
 the human never reads raw Infracost output.
 
-Spec: research/findings/finops-rds-postgres-cost-reference.md
-  Reference: $39.71/mo for db.t3.small (PostgreSQL, ap-southeast-5, Single-AZ)
-  Tolerance: +/- $4.00 (~10%)
-  Acceptable range: [$35.71, $43.71]
+Spec: research/findings/finops-ec2-app-tier-cost-reference.md
+  Reference: $9.38/mo for t3.micro (Linux/UNIX, ap-southeast-5, 8 GB gp3)
+  Tolerance: +/- $1.00 (~10%)
+  Acceptable range: [$8.38, $10.38]
 
 Modes:
   --path <terraform_dir>   run `infracost breakdown` and validate its output
@@ -27,12 +27,12 @@ import subprocess
 import sys
 
 # --- Constants from the FinOps spec. Do NOT bury these in logic. ---
-# Source: research/findings/finops-rds-postgres-cost-reference.md
-TARGET_RESOURCE = "aws_db_instance.payments_db"
-REFERENCE_COST = 39.71          # USD/month reference (db.t3.small, ap-southeast-5)
-TOLERANCE = 4.00                # +/- USD/month (~10%)
-RANGE_LOW = REFERENCE_COST - TOLERANCE   # 35.71
-RANGE_HIGH = REFERENCE_COST + TOLERANCE  # 43.71
+# Source: research/findings/finops-ec2-app-tier-cost-reference.md
+TARGET_RESOURCE = "aws_instance.app_tier"
+REFERENCE_COST = 9.38           # USD/month reference (t3.micro, 8 GB gp3, ap-southeast-5)
+TOLERANCE = 1.00                # +/- USD/month (~10%)
+RANGE_LOW = REFERENCE_COST - TOLERANCE   # 8.38
+RANGE_HIGH = REFERENCE_COST + TOLERANCE  # 10.38
 
 # Exit codes
 EXIT_PASS = 0
@@ -119,13 +119,13 @@ def evaluate(infracost_data):
     if RANGE_LOW <= monthly_cost <= RANGE_HIGH:
         status = "pass"
         message = (
-            f"RDS instance cost ${monthly_cost:.2f}/mo is within acceptable "
+            f"EC2 instance cost ${monthly_cost:.2f}/mo is within acceptable "
             f"range [${RANGE_LOW:.2f}–${RANGE_HIGH:.2f}]."
         )
     else:
         status = "fail"
         message = (
-            f"RDS instance cost ${monthly_cost:.2f}/mo is OUTSIDE acceptable "
+            f"EC2 instance cost ${monthly_cost:.2f}/mo is OUTSIDE acceptable "
             f"range [${RANGE_LOW:.2f}–${RANGE_HIGH:.2f}] "
             f"(reference ${REFERENCE_COST:.2f} ± ${TOLERANCE:.2f})."
         )

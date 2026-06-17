@@ -1,11 +1,16 @@
-# Inputs for the staging environment (v1: AWS-only).
+# Inputs for the staging environment (v2: AWS + GCP).
 # Regions are locked in providers.tf.
-# Credentials sourced from EC2 instance role (IMDSv2) — no static keys.
+# Credentials sourced from EC2 instance role (AWS IMDSv2) and WIF (GCP) — no static keys.
 
 variable "environment" {
   description = "Environment name for resource tagging."
   type        = string
   default     = "staging"
+}
+
+variable "gcp_project" {
+  description = "GCP project ID for the Google provider."
+  type        = string
 }
 
 variable "app_tier_ami" {

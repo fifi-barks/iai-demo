@@ -33,8 +33,8 @@ Exit codes:
 
 Note on the Checkov invocation: we do NOT pass `--quiet`. `--quiet` suppresses
 the `passed_checks` block from Checkov's JSON, but the demo's approval card
-requires the passing watched checks (RDS encryption-at-rest, RDS public-access
-blocked) to be reported. Accuracy of the passed-checks line is a locked
+requires the passing watched checks (EC2 IMDSv2 enforced, GCS uniform bucket
+access enabled) to be reported. Accuracy of the passed-checks line is a locked
 requirement (see docs/demo-scenario.md, the "discrimination" beat), so the
 full JSON is required.
 """
@@ -48,29 +48,27 @@ import sys
 # --- Checks in scope for the demo (Checkov IDs). Source of truth: the
 # Researcher's SecOps spec + docs/demo-scenario.md. Everything Checkov reports
 # outside this set is filtered out so the card stays focused. ---
-WATCHED_CHECKS = ["CKV_AWS_24", "CKV_AWS_16", "CKV_AWS_17"]
+#   CKV_AWS_24 — security group allows ingress from 0.0.0.0/0 to port 22 (SSH)
+#   CKV_AWS_79 — EC2 instance does not enforce IMDSv2 (http_tokens = "required")
+#   CKV_GCP_29 — GCS bucket does not use uniform bucket-level access
+WATCHED_CHECKS = ["CKV_AWS_24", "CKV_AWS_79", "CKV_GCP_29"]
 
 # Open-source Checkov reports `severity: null` (severities are a Bridgecrew /
 # Prisma platform feature). We pin severities for the watched checks here so
 # the gate output is deterministic and platform-independent.
-#   CKV_AWS_24 — security group allows ingress from 0.0.0.0/0 to port 22 (SSH)
-#   CKV_AWS_16 — RDS encrypted at rest
-#   CKV_AWS_17 — RDS not publicly accessible
 _WATCHED_SEVERITY = {
     "CKV_AWS_24": "CRITICAL",
-    "CKV_AWS_16": "HIGH",
-    "CKV_AWS_17": "HIGH",
+    "CKV_AWS_79": "HIGH",
+    "CKV_GCP_29": "HIGH",
 }
 
 # --- Trivy config AVDID equivalents for the same watched checks.
 # Trivy (Aqua's successor to tfsec) uses AVD identifiers.
 #   AVD-AWS-0018 — security group allows unrestricted public ingress
-#   AVD-AWS-0077 — RDS instance storage not encrypted at rest
-#   AVD-AWS-0076 — RDS instance is publicly accessible
+#   AVD-AWS-0028 — EC2 IMDSv2 not enforced (http_tokens optional)
 WATCHED_TRIVY_CHECKS = {
     "AVD-AWS-0018": "CRITICAL",
-    "AVD-AWS-0077": "HIGH",
-    "AVD-AWS-0076": "HIGH",
+    "AVD-AWS-0028": "HIGH",
 }
 
 # Exit codes

@@ -8,6 +8,7 @@ Kept separate from telegram_bot.py so it can be imported and tested without a
 live Telegram connection or bot token.
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 MANIFEST_PATH = os.environ.get("IAI_MANIFEST", "manifest.yaml")
 INFRACOST_FIXTURE = os.environ.get(
     "IAI_INFRACOST_FIXTURE",
-    "tests/fixtures/infracost_payments_db_pass.json",
+    "tests/fixtures/infracost_app_tier_pass.json",
 )
 
 APPROVE_LABEL = "✅ Approve"
@@ -87,7 +88,7 @@ def process_intent_with_ollama(user_message: str) -> dict:
         resp = requests.post(
             OLLAMA_URL,
             json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False, "format": "json"},
-            timeout=60,
+            timeout=120,
         )
         resp.raise_for_status()
         raw_response = resp.json().get("response", "")
@@ -118,12 +119,14 @@ def process_intent(
     """Process a plain-language intent and return the pipeline result.
 
     Sends the intent through Ollama/phi first to extract structured
-    requirements, then runs the full gate pipeline.
+    requirements, then routes to the appropriate pipeline based on
+    intent_type ("provision" | "modify" → provision; "destroy" → teardown).
 
     Returns:
         {
             "card": str,            # the full approval card text
-            "raw": dict,            # raw gate results (security, cost, plan)
+            "action": str,          # "provision" or "destroy"
+            "raw": dict | None,     # raw gate results (provision only)
             "approve_label": str,   # button label for Approve
             "decline_label": str,   # button label for Decline
             "intent": str,          # the original intent text, echoed back
@@ -131,14 +134,30 @@ def process_intent(
         }
     """
     parsed_intent = process_intent_with_ollama(intent_text)
+    intent_type = parsed_intent.get("intent_type", "provision")
 
+    if intent_type == "destroy":
+        from agent.pipeline import run_destroy_pipeline
+        result = run_destroy_pipeline(manifest_path)
+        return {
+            "card": result["card"],
+            "keyboard": None,
+            "raw": None,
+            "action": "destroy",
+            "approve_label": APPROVE_LABEL,
+            "decline_label": DECLINE_LABEL,
+            "intent": intent_text,
+            "parsed_intent": parsed_intent,
+        }
+
+    # "provision" or "modify" — both handled by the provision pipeline.
     from agent.pipeline import run_pipeline
     result = run_pipeline(manifest_path, infracost_fixture=infracost_fixture)
-
     return {
         "card": result["card"],
         "keyboard": result.get("keyboard"),
         "raw": result["raw"],
+        "action": "provision",
         "approve_label": APPROVE_LABEL,
         "decline_label": DECLINE_LABEL,
         "intent": intent_text,
@@ -151,13 +170,17 @@ async def handle_approval(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     Register with:
         application.add_handler(CallbackQueryHandler(handle_approval, pattern="^approve$"))
+
+    apply_and_finalize() is synchronous and can run for minutes (tofu plan +
+    apply, subject to APPLY_TIMEOUT_SECONDS). It's run via asyncio.to_thread()
+    so it doesn't block the bot's event loop — without this, a slow or hung
+    apply freezes the whole bot and the user never gets a response, success
+    or failure.
     """
     from agent.pipeline import (
         TERRAFORM_GENERATED_DIR,
         TERRAFORM_SNAPSHOT_DIR,
-        apply_infrastructure,
-        snapshot_data_bearing_resources,
-        update_manifest_after_apply,
+        apply_and_finalize,
     )
 
     query = update.callback_query
@@ -165,15 +188,9 @@ async def handle_approval(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await query.answer()
 
     try:
-        apply_result = apply_infrastructure(TERRAFORM_GENERATED_DIR, TERRAFORM_SNAPSHOT_DIR)
-
-        with open(apply_result["state_snapshot_path"]) as fh:
-            before_state = json.load(fh)
-        snapshot_data_bearing_resources(MANIFEST_PATH, before_state)
-
-        tfstate_path = os.path.join(TERRAFORM_GENERATED_DIR, "terraform.tfstate")
-        update_manifest_after_apply(MANIFEST_PATH, tfstate_path)
-
+        await asyncio.to_thread(
+            apply_and_finalize, TERRAFORM_GENERATED_DIR, TERRAFORM_SNAPSHOT_DIR, MANIFEST_PATH
+        )
         await query.edit_message_text("✓ Infrastructure applied successfully. Manifest updated.")
 
     except Exception as exc:

@@ -25,7 +25,7 @@ from agent.pipeline import run_pipeline
 from agent.manifest_reader import ManifestReader
 
 MANIFEST_PATH = os.path.join(REPO_ROOT, "manifest.yaml")
-FIXTURE_PATH = os.path.join(REPO_ROOT, "tests", "fixtures", "infracost_payments_db_pass.json")
+FIXTURE_PATH = os.path.join(REPO_ROOT, "tests", "fixtures", "infracost_app_tier_pass.json")
 
 results = []  # list of (test_name, passed, message)
 
@@ -122,7 +122,7 @@ def test_2_security_no_check_ids_plain_english():
         failures = []
 
         # Raw check IDs must never appear in the card.
-        for check_id in ("CKV_AWS_24", "CKV_AWS_16", "CKV_AWS_17"):
+        for check_id in ("CKV_AWS_24", "CKV_AWS_79", "CKV_GCP_29"):
             if check_id in card:
                 failures.append(f"card must not expose check ID '{check_id}'")
 
@@ -164,31 +164,31 @@ def test_3_security_passed_checks_confirmed():
         passed = raw["security"]["passed_checks"]
         failures = []
 
-        if "CKV_AWS_16" in passed:
-            encryption_mentioned = any(
-                phrase in card for phrase in ["Encryption at rest", "encryption"]
+        if "CKV_AWS_79" in passed:
+            imdsv2_mentioned = any(
+                phrase in card for phrase in ["IMDSv2", "imdsv2", "http_tokens"]
             )
-            if not encryption_mentioned:
+            if not imdsv2_mentioned:
                 failures.append(
-                    "CKV_AWS_16 passed but card does not confirm encryption "
-                    "(expected 'Encryption at rest' or 'encryption')"
+                    "CKV_AWS_79 passed but card does not confirm IMDSv2 enforcement "
+                    "(expected 'IMDSv2' in card)"
                 )
 
-        if "CKV_AWS_17" in passed:
-            public_access_mentioned = any(
-                phrase in card for phrase in ["Public access", "publicly accessible"]
+        if "CKV_GCP_29" in passed:
+            uniform_mentioned = any(
+                phrase in card for phrase in ["Uniform bucket", "uniform bucket", "bucket access"]
             )
-            if not public_access_mentioned:
+            if not uniform_mentioned:
                 failures.append(
-                    "CKV_AWS_17 passed but card does not confirm public-access block "
-                    "(expected 'Public access' or 'publicly accessible')"
+                    "CKV_GCP_29 passed but card does not confirm uniform bucket access "
+                    "(expected 'Uniform bucket' or 'bucket access' in card)"
                 )
 
         if failures:
             record(name, False,
                    "\n".join(failures) +
                    f"\npassed_checks={passed}" +
-                   f"\nCard security section: {[l for l in card.splitlines() if 'Security' in l or 'Encryption' in l or 'Public' in l or 'check' in l]}")
+                   f"\nCard security section: {[l for l in card.splitlines() if 'Security' in l or 'IMDSv2' in l or 'bucket' in l.lower() or 'check' in l]}")
         else:
             record(name, True)
     except Exception:

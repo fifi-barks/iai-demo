@@ -45,24 +45,23 @@ def test_1_demo_criticality_tags():
 
         failures = []
 
-        # payments-vpc declared 'high' but payments-db (critical) depends_on it
-        # → effective 'critical' must appear somewhere in the HCL
+        # app-tier is directly critical → criticality="critical" must appear
         if 'criticality = "critical"' not in hcl:
             failures.append(
                 'criticality = "critical" not found anywhere in generated HCL'
             )
 
-        # Check aws_vpc block specifically for criticality = "critical"
-        if 'resource "aws_vpc" "payments_vpc"' not in hcl:
-            failures.append('aws_vpc "payments_vpc" resource block not found')
+        # Check aws_security_group "app_tier" block for criticality = "critical"
+        if 'resource "aws_security_group" "app_tier"' not in hcl:
+            failures.append('aws_security_group "app_tier" resource block not found')
         else:
-            vpc_block_start = hcl.index('resource "aws_vpc" "payments_vpc"')
-            vpc_block_end = hcl.index("\n}", vpc_block_start) + 2
-            vpc_block = hcl[vpc_block_start:vpc_block_end]
-            if 'criticality = "critical"' not in vpc_block:
+            sg_block_start = hcl.index('resource "aws_security_group" "app_tier"')
+            sg_block_end = hcl.index("\n}", sg_block_start) + 2
+            sg_block = hcl[sg_block_start:sg_block_end]
+            if 'criticality = "critical"' not in sg_block:
                 failures.append(
-                    f"aws_vpc payments_vpc block missing criticality=critical; "
-                    f"block content:\n{vpc_block}"
+                    f"aws_security_group app_tier block missing criticality=critical; "
+                    f"block content:\n{sg_block}"
                 )
 
         # export-bucket stays high and uses labels
@@ -253,21 +252,21 @@ def test_4_aws_tags_gcp_labels():
                     f"GCP bucket must NOT use 'tags'; found in block:\n{bucket_block}"
                 )
 
-        # AWS VPC must use 'tags', not 'labels'
-        if 'resource "aws_vpc" "payments_vpc"' not in hcl:
-            failures.append('aws_vpc "payments_vpc" resource block not found')
+        # AWS security group must use 'tags', not 'labels'
+        if 'resource "aws_security_group" "app_tier"' not in hcl:
+            failures.append('aws_security_group "app_tier" resource block not found')
         else:
-            vpc_start = hcl.index('resource "aws_vpc" "payments_vpc"')
-            vpc_end = hcl.index("\n}", vpc_start) + 2
-            vpc_block = hcl[vpc_start:vpc_end]
+            sg_start = hcl.index('resource "aws_security_group" "app_tier"')
+            sg_end = hcl.index("\n}", sg_start) + 2
+            sg_block = hcl[sg_start:sg_end]
 
-            if "tags" not in vpc_block:
+            if "tags" not in sg_block:
                 failures.append(
-                    f"AWS VPC must use 'tags'; not found in block:\n{vpc_block}"
+                    f"AWS security group must use 'tags'; not found in block:\n{sg_block}"
                 )
-            if "labels" in vpc_block:
+            if "labels" in sg_block:
                 failures.append(
-                    f"AWS VPC must NOT use 'labels'; found in block:\n{vpc_block}"
+                    f"AWS security group must NOT use 'labels'; found in block:\n{sg_block}"
                 )
 
         if not failures:

@@ -31,8 +31,8 @@ _FINDING_DESCRIPTIONS = {
 # Plain-English descriptions for watched checks that PASSED (the discrimination
 # beat: the gate is doing real work, not stamping everything green).
 _PASSED_DESCRIPTIONS = {
-    "CKV_AWS_16": "Encryption at rest: ✓",
-    "CKV_AWS_17": "Public access blocked: ✓",
+    "CKV_AWS_79": "IMDSv2 enforced: ✓",
+    "CKV_GCP_29": "Uniform bucket access: ✓",
 }
 
 # Friendly cloud names derived from manifest resource `cloud` fields.
@@ -66,6 +66,7 @@ class ApprovalSynthesizer:
         lines.append(self._cost_line(cost_result))
         lines.extend(self._security_lines(security_result))
         lines.extend(self._critical_lines(resources, criticality))
+        lines.append("• Rollback:   Infra state snapshot saved before apply.")
 
         keyboard = InlineKeyboardMarkup([[
             InlineKeyboardButton("Approve", callback_data="approve"),
@@ -250,4 +251,4 @@ class ApprovalSynthesizer:
         for dep in deps:
             if dep in critical_set:
                 return f"[depends on {dep}]"
-        return "[dependency of critical resources]"
+        return "[directly critical]"

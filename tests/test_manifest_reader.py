@@ -80,11 +80,11 @@ def test_2_engine_resolution():
 # Test 3 — Resource access: correct keys and count for staging
 # ---------------------------------------------------------------------------
 def test_3_resource_access():
-    name = "Test 3 — Resource access: staging has exactly 4 expected resources"
+    name = "Test 3 — Resource access: staging has exactly 2 expected resources"
     try:
         r = ManifestReader(MANIFEST_PATH)
         resources = r.get_resources("staging")
-        expected_keys = {"payments-vpc", "payments-db", "app-tier", "export-bucket"}
+        expected_keys = {"app-tier", "export-bucket"}
         actual_keys = set(resources.keys())
         failures = []
         if actual_keys != expected_keys:
@@ -92,8 +92,8 @@ def test_3_resource_access():
                 f"resource keys: expected {sorted(expected_keys)}, "
                 f"got {sorted(actual_keys)}"
             )
-        if len(resources) != 4:
-            failures.append(f"resource count: expected 4, got {len(resources)}")
+        if len(resources) != 2:
+            failures.append(f"resource count: expected 2, got {len(resources)}")
         if not failures:
             record(name, True)
         else:
@@ -103,26 +103,17 @@ def test_3_resource_access():
 
 
 # ---------------------------------------------------------------------------
-# Test 4 — Criticality transitivity
+# Test 4 — Criticality: direct critical + high, no transitivity needed
 # ---------------------------------------------------------------------------
-def test_4_criticality_transitivity():
-    name = "Test 4 — Criticality transitivity: payments-vpc inherits critical via payments-db"
+def test_4_criticality():
+    name = "Test 4 — Criticality: app-tier=critical (direct), export-bucket=high, edge-network={}"
     try:
         r = ManifestReader(MANIFEST_PATH)
         crit = r.resolve_criticality("staging")
 
         failures = []
 
-        # payments-vpc is declared 'high' but payments-db (critical) depends_on it,
-        # so it must emerge 'critical'.
-        if crit.get("payments-vpc") != "critical":
-            failures.append(
-                f"payments-vpc: expected 'critical', got {crit.get('payments-vpc')!r}"
-            )
-        if crit.get("payments-db") != "critical":
-            failures.append(
-                f"payments-db: expected 'critical', got {crit.get('payments-db')!r}"
-            )
+        # app-tier is declared 'critical' directly (depends_on=[])
         if crit.get("app-tier") != "critical":
             failures.append(
                 f"app-tier: expected 'critical', got {crit.get('app-tier')!r}"
@@ -169,9 +160,9 @@ def test_5_roundtrip_preserves_comments():
             failures.append(
                 "missing comment '# Kuala Lumpur, Malaysia' in round-tripped output"
             )
-        if "# Why: private network boundary" not in content:
+        if "# Why: compute tier serving" not in content:
             failures.append(
-                "missing comment '# Why: private network boundary' in round-tripped output"
+                "missing comment '# Why: compute tier serving' in round-tripped output"
             )
         if "# Agent-maintained" not in content:
             failures.append(
@@ -197,11 +188,11 @@ def test_6_state_update_and_write():
         r2 = ManifestReader(MANIFEST_PATH)
         r2.update_resource_state(
             "staging",
-            "payments-vpc",
+            "app-tier",
             {
                 "status": "applied",
-                "resource_id": "vpc-test123",
-                "last_applied": "2026-06-06T00:00:00Z",
+                "resource_id": "i-0abc1234",
+                "last_applied": "2026-06-17T00:00:00Z",
             },
         )
         with tempfile.NamedTemporaryFile(
@@ -212,30 +203,30 @@ def test_6_state_update_and_write():
 
         # Reload and verify state was updated
         r3 = ManifestReader(tmp)
-        vpc_state = r3.get_resources("staging")["payments-vpc"]["state"]
+        app_tier_state = r3.get_resources("staging")["app-tier"]["state"]
 
         failures = []
-        if vpc_state.get("status") != "applied":
+        if app_tier_state.get("status") != "applied":
             failures.append(
-                f"payments-vpc state.status: expected 'applied', got {vpc_state.get('status')!r}"
+                f"app-tier state.status: expected 'applied', got {app_tier_state.get('status')!r}"
             )
-        if vpc_state.get("resource_id") != "vpc-test123":
+        if app_tier_state.get("resource_id") != "i-0abc1234":
             failures.append(
-                f"payments-vpc state.resource_id: expected 'vpc-test123', "
-                f"got {vpc_state.get('resource_id')!r}"
+                f"app-tier state.resource_id: expected 'i-0abc1234', "
+                f"got {app_tier_state.get('resource_id')!r}"
             )
-        if vpc_state.get("last_applied") != "2026-06-06T00:00:00Z":
+        if app_tier_state.get("last_applied") != "2026-06-17T00:00:00Z":
             failures.append(
-                f"payments-vpc state.last_applied: expected '2026-06-06T00:00:00Z', "
-                f"got {vpc_state.get('last_applied')!r}"
+                f"app-tier state.last_applied: expected '2026-06-17T00:00:00Z', "
+                f"got {app_tier_state.get('last_applied')!r}"
             )
 
         # Verify other resources are untouched
-        db_state = r3.get_resources("staging")["payments-db"]["state"]
-        if db_state.get("status") != "pending":
+        bucket_state = r3.get_resources("staging")["export-bucket"]["state"]
+        if bucket_state.get("status") != "pending":
             failures.append(
-                f"payments-db state.status (untouched): expected 'pending', "
-                f"got {db_state.get('status')!r}"
+                f"export-bucket state.status (untouched): expected 'pending', "
+                f"got {bucket_state.get('status')!r}"
             )
 
         # Verify comments survived the write
@@ -243,9 +234,9 @@ def test_6_state_update_and_write():
             written = f.read()
         os.unlink(tmp)
 
-        if "# Why: private network boundary" not in written:
+        if "# Why: compute tier serving" not in written:
             failures.append(
-                "missing comment '# Why: private network boundary' after state update write"
+                "missing comment '# Why: compute tier serving' after state update write"
             )
         if "# Kuala Lumpur, Malaysia" not in written:
             failures.append(
@@ -270,7 +261,7 @@ if __name__ == "__main__":
     test_1_parse()
     test_2_engine_resolution()
     test_3_resource_access()
-    test_4_criticality_transitivity()
+    test_4_criticality()
     test_5_roundtrip_preserves_comments()
     test_6_state_update_and_write()
 

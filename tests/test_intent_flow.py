@@ -24,12 +24,12 @@ sys.path.insert(0, REPO_ROOT)
 
 from bot.intent_handler import process_intent, APPROVE_LABEL, DECLINE_LABEL
 
-FIXTURE_PATH = os.path.join(REPO_ROOT, "tests", "fixtures", "infracost_payments_db_pass.json")
+FIXTURE_PATH = os.path.join(REPO_ROOT, "tests", "fixtures", "infracost_app_tier_pass.json")
 
 # The locked demo intent from docs/demo-scenario.md — must not be altered.
 DEMO_INTENT = (
     "Stand up a staging environment for the payments service: "
-    "a managed Postgres, an app compute tier, and a private network in AWS, "
+    "an EC2 app compute tier in AWS, "
     "plus an object-storage bucket in GCP for export files. "
     "Tag it staging, owner payments-team."
 )

@@ -2,13 +2,14 @@
 
 Reads the platform manifest (via ManifestReader), enforces the greenfield
 criticality contract, resolves effective (transitive) criticality, and renders
-OpenTofu HCL for AWS resources. Each resource name maps to a dedicated renderer;
-criticality is injected into AWS `tags` blocks.
+OpenTofu HCL for AWS and GCP resources. Each resource name maps to a dedicated
+renderer; criticality is injected into AWS `tags` and GCP `labels` blocks.
 
 Library scope: stdlib + ruamel.yaml only (ManifestReader pulls in ruamel.yaml).
 This module is a library: no CLI entry point.
 
-v1: AWS-only. Multi-cloud support deferred to v2.
+v2: Multi-cloud (AWS + GCP). AWS: EC2 instance + security group (default VPC).
+GCP: GCS bucket with uniform bucket-level access.
 """
 
 import os
@@ -30,9 +31,8 @@ class IaCGenerator:
         self._reader = ManifestReader(manifest_path)
         self._env = env
         self._RENDERERS = {
-            "payments-vpc": self._render_payments_vpc,
-            "payments-db": self._render_payments_db,
             "app-tier": self._render_app_tier,
+            "export-bucket": self._render_export_bucket,
         }
 
     def validate_greenfield(self) -> None:
@@ -76,65 +76,16 @@ class IaCGenerator:
             "  }"
         )
 
-    # --- Renderers ----------------------------------------------------------
-
-    def _render_payments_vpc(self, name: str, resource: dict, criticality: str) -> str:
-        tf = _tf_name(name)
-        vpc = (
-            f'resource "aws_vpc" "{tf}" {{\n'
-            '  cidr_block = "10.0.0.0/16"\n'
-            "\n"
-            f"{self._aws_tags(criticality)}\n"
-            "}"
-        )
-        subnet_az1 = (
-            'resource "aws_subnet" "payments_private_az1" {\n'
-            f"  vpc_id                  = aws_vpc.{tf}.id\n"
-            '  cidr_block              = "10.0.1.0/24"\n'
-            '  availability_zone       = "ap-southeast-5a"\n'
-            "  map_public_ip_on_launch = false\n"
-            "\n"
-            f"{self._aws_tags(criticality)}\n"
-            "}"
-        )
-        subnet_az2 = (
-            'resource "aws_subnet" "payments_private_az2" {\n'
-            f"  vpc_id                  = aws_vpc.{tf}.id\n"
-            '  cidr_block              = "10.0.2.0/24"\n'
-            '  availability_zone       = "ap-southeast-5b"\n'
-            "  map_public_ip_on_launch = false\n"
-            "\n"
-            f"{self._aws_tags(criticality)}\n"
-            "}"
-        )
-        subnet_group = (
-            'resource "aws_db_subnet_group" "payments" {\n'
-            '  name       = "payments-staging"\n'
-            "  subnet_ids = [aws_subnet.payments_private_az1.id, aws_subnet.payments_private_az2.id]\n"
-            "\n"
-            f"{self._aws_tags(criticality)}\n"
-            "}"
-        )
-        return "\n\n".join([vpc, subnet_az1, subnet_az2, subnet_group])
-
-    def _render_payments_db(self, name: str, resource: dict, criticality: str) -> str:
-        tf = _tf_name(name)
+    def _gcp_labels(self, criticality: str) -> str:
         return (
-            f'resource "aws_db_instance" "{tf}" {{\n'
-            '  identifier           = "payments-staging"\n'
-            '  engine               = "postgres"\n'
-            '  engine_version       = "16"\n'
-            '  instance_class       = "db.t3.small"\n'
-            "  allocated_storage    = 20\n"
-            '  storage_type         = "gp3"\n'
-            "  storage_encrypted    = true\n"
-            "  publicly_accessible  = false\n"
-            "  skip_final_snapshot  = true\n"
-            "  db_subnet_group_name = aws_db_subnet_group.payments.name\n"
-            "\n"
-            f"{self._aws_tags(criticality)}\n"
-            "}"
+            "  labels = {\n"
+            "    environment = var.environment\n"
+            '    owner       = "payments-team"\n'
+            f'    criticality = "{criticality}"\n'
+            "  }"
         )
+
+    # --- Renderers ----------------------------------------------------------
 
     def _render_app_tier(self, name: str, resource: dict, criticality: str) -> str:
         tf = _tf_name(name)
@@ -144,7 +95,6 @@ class IaCGenerator:
             f'resource "aws_security_group" "{tf}" {{\n'
             '  name        = "payments-app-tier"\n'
             '  description = "App tier security group for payments staging"\n'
-            "  vpc_id      = aws_vpc.payments_vpc.id\n"
             "\n"
             "  ingress {\n"
             '    description = "SSH - intentionally open to internet for security gate demo"\n'
@@ -158,16 +108,40 @@ class IaCGenerator:
             "}"
         )
         instance = (
-            "\n# App tier: runs pre-baked image provisioned by CI/Packer upstream (out of scope).\n"
-            "# The AMI variable must be supplied at runtime.\n"
-            f'resource "aws_instance" "{tf}_instance" {{\n'
+            "\n# App tier: EC2 instance in the default VPC.\n"
+            "# AMI and instance type supplied via variables. IMDSv2 enforced (CKV_AWS_79 passes).\n"
+            "# root_block_device is declared explicitly so Infracost produces a deterministic estimate.\n"
+            f'resource "aws_instance" "{tf}" {{\n'
             "  ami                    = var.app_tier_ami\n"
             '  instance_type          = "t3.micro"\n'
-            "  subnet_id              = aws_subnet.payments_private_az1.id\n"
             f"  vpc_security_group_ids = [aws_security_group.{tf}.id]\n"
+            "\n"
+            "  metadata_options {\n"
+            '    http_endpoint               = "enabled"\n'
+            '    http_tokens                 = "required"\n'
+            "    http_put_response_hop_limit = 1\n"
+            "  }\n"
+            "\n"
+            "  root_block_device {\n"
+            '    volume_type = "gp3"\n'
+            "    volume_size = 8\n"
+            "  }\n"
             "\n"
             f"{self._aws_tags(criticality)}\n"
             "}"
         )
         return sg + "\n" + instance
 
+    def _render_export_bucket(self, name: str, resource: dict, criticality: str) -> str:
+        return (
+            "# GCS export bucket. Uniform bucket-level access is enforced (CKV_GCP_29 passes).\n"
+            'resource "google_storage_bucket" "export_bucket" {\n'
+            '  name          = "iai-export-${var.environment}"\n'
+            '  location      = "ASIA-SOUTHEAST1"\n'
+            "  force_destroy = true\n"
+            "\n"
+            "  uniform_bucket_level_access = true\n"
+            "\n"
+            f"{self._gcp_labels(criticality)}\n"
+            "}"
+        )

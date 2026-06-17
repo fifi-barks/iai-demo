@@ -1,70 +1,58 @@
-# Platform Manifest — payments service, v1 (AWS-only)
-# Why: staging environment for the payments service: VPC, managed Postgres (data-bearing),
-# and app-tier compute. Demonstrates multi-AZ resilience, security scanning, cost estimation,
-# and criticality-based data snapshots. Greenfield provisioning via OpenTofu.
+# Platform Manifest — payments service, v2 (AWS + GCP)
+# Why: staging environment for the payments service: EC2 app compute tier on AWS,
+# and GCS export-storage bucket on GCP. Demonstrates multi-cloud provisioning,
+# security scanning, cost estimation, and criticality-based state snapshots.
+# Greenfield provisioning via OpenTofu.
 #
 # Auto-update note: agent rewrites only `state:` blocks after apply.
 # All other fields and comments are human-owned. Library: ruamel.yaml.
-# Multi-cloud support (GCP, etc.) deferred to v2.
 
 manifest_version: "1"
 
 environments:
 
   staging:
-    # Why: isolated staging environment for payments service — reduced-scale mirror of prod.
+    # Why: isolated staging environment for payments service.
     engine: opentofu
-    clouds: [aws]
+    clouds: [aws, gcp]
     regions:
       aws: ap-southeast-5      # Kuala Lumpur, Malaysia
+      gcp: asia-southeast1     # Singapore
     tags:
       environment: staging
       owner: payments-team
 
     resources:
 
-      payments-vpc:
-        # Why: private network boundary for all AWS resources in this environment.
-        # Network isolation is a prerequisite for the data-snapshot rollback guarantee.
+      app-tier:
+        # Why: compute tier serving the payments API (EC2, default VPC, public subnet).
+        # Security gate will flag 0.0.0.0/0 inbound — intentional demo of CKV_AWS_24.
+        # IMDSv2 is enforced (http_tokens = required); gate confirms this passes CKV_AWS_79.
         cloud: aws
-        type: aws_vpc
-        criticality: high
+        type: aws_instance
+        criticality: critical
         depends_on: []
         # Agent-maintained — do not edit:
         state:
           status: pending        # pending | applied | failed
-          resource_id: ~         # e.g. vpc-0abc1234 after apply
+          resource_id: ~         # e.g. i-0abc1234 after apply
           last_applied: ~
 
-      payments-db:
-        # Why: managed Postgres holding payments transaction records.
-        # Data-bearing → triggers infra-state snapshot + native RDS snapshot before apply.
-        # Criticality is transitive: any resource in depends_on that references this one
-        # inherits 'critical' even if tagged lower.
-        cloud: aws
-        type: aws_db_instance    # RDS Postgres
-        criticality: critical
-        data_bearing: true
-        depends_on: [payments-vpc]
+      export-bucket:
+        # Why: GCS bucket for payment export files. High (not critical) — read-heavy,
+        # no transaction data. Uniform bucket-level access is enforced (CKV_GCP_29 passes).
+        cloud: gcp
+        type: google_storage_bucket
+        criticality: high
+        depends_on: []
         # Agent-maintained — do not edit:
         state:
           status: pending
-          resource_id: ~         # e.g. payments-db-staging after apply
-          endpoint: ~
+          resource_id: ~         # e.g. iai-export-staging after apply
           last_applied: ~
 
-      app-tier:
-        # Why: compute tier serving the payments API.
-        # Depends on payments-db via security group; inherits critical through transitivity.
-        # Security gate will flag 0.0.0.0/0 inbound if the generator emits it — gate must
-        # catch this and restrict ingress to the VPC CIDR before the summary is shown.
-        cloud: aws
-        type: aws_instance
-        criticality: critical    # inherited from payments-db via transitivity
-        depends_on: [payments-db, payments-vpc]
-        # Agent-maintained — do not edit:
-        state:
-          status: pending
-          resource_id: ~
-          last_applied: ~
-
+  edge-network:
+    # Out of scope for v1 — physical network provisioning via Ansible.
+    # Included as a manifest stub to demonstrate multi-engine support.
+    engine: ansible
+    scope: out-of-scope-v1

@@ -1,0 +1,58 @@
+{
+  "version": "0.2",
+  "metadata": {
+    "infracostCommand": "breakdown",
+    "vcsRepositoryUrl": ""
+  },
+  "currency": "USD",
+  "projects": [
+    {
+      "name": "terraform/generated",
+      "metadata": {
+        "path": "terraform/generated",
+        "type": "terraform_dir"
+      },
+      "breakdown": {
+        "resources": [
+          {
+            "name": "aws_instance.app_tier",
+            "resourceType": "aws_instance",
+            "tags": {
+              "environment": "staging",
+              "owner": "payments-team",
+              "criticality": "critical"
+            },
+            "metadata": {},
+            "hourlyCost": "0.006884931506849",
+            "monthlyCost": "5.03",
+            "costComponents": [
+              {
+                "name": "Instance usage (Linux/UNIX, on-demand, t3.nano)",
+                "unit": "hours",
+                "hourlyQuantity": "1",
+                "monthlyQuantity": "730",
+                "price": "0.00595",
+                "hourlyCost": "0.00595",
+                "monthlyCost": "4.34"
+              },
+              {
+                "name": "Storage (gp3, root volume)",
+                "unit": "GB",
+                "hourlyQuantity": "0.010958904109589",
+                "monthlyQuantity": "8",
+                "price": "0.0864",
+                "hourlyCost": "0.000945205479452",
+                "monthlyCost": "0.69"
+              }
+            ]
+          }
+        ],
+        "totalHourlyCost": "0.006884931506849",
+        "totalMonthlyCost": "5.03"
+      }
+    }
+  ],
+  "totalHourlyCost": "0.006884931506849",
+  "totalMonthlyCost": "5.03",
+  "timeGenerated": "2026-06-17T00:00:00Z"
+}

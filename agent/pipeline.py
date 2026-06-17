@@ -19,6 +19,7 @@ cost gate file itself is left untouched.
 
 import argparse
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -33,17 +34,27 @@ from gates import plan_gate, security_gate
 from gates.cost_gate import evaluate as cost_evaluate
 from gates.cost_gate import load_fixture, run_infracost, TARGET_RESOURCE
 
+logger = logging.getLogger(__name__)
+
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _GENERATED_DIR = os.path.join(_REPO_ROOT, "terraform", "generated")
 _STAGING_DIR = os.path.join(_REPO_ROOT, "terraform", "staging")
+
+# Hard ceiling on how long a single `tofu plan` / `tofu apply` is allowed to
+# run before apply_infrastructure() gives up and raises. Without this, a hung
+# subprocess (stale state lock, a credential call that never returns, an
+# unexpected interactive prompt, etc.) blocks forever with no error and no
+# log line — which is exactly the failure mode this constant exists to kill.
+# Override with IAI_APPLY_TIMEOUT for slower stacks (e.g. RDS provisioning).
+APPLY_TIMEOUT_SECONDS = int(os.environ.get("IAI_APPLY_TIMEOUT", "600"))
 
 # Public paths used by the bot's approval handler.
 TERRAFORM_GENERATED_DIR = _GENERATED_DIR
 TERRAFORM_SNAPSHOT_DIR = os.path.join(_REPO_ROOT, "terraform", "snapshots")
 
 # Files copied from the staging module so checkov / terraform see a complete
-# module (providers + variables) alongside the generated main.tf.
-_SUPPORT_FILES = ["providers.tf", "variables.tf"]
+# module (providers + variables + variable values) alongside the generated main.tf.
+_SUPPORT_FILES = ["providers.tf", "variables.tf", "terraform.tfvars"]
 
 
 def _prepare_generated_module(manifest_path: str, env: str) -> str:
@@ -154,6 +165,50 @@ def run_pipeline(
     }
 
 
+def _run_tofu(args: list[str], cwd: str, timeout: int = APPLY_TIMEOUT_SECONDS) -> subprocess.CompletedProcess:
+    """Run a tofu subcommand with [APPLY] logging and a hard timeout.
+
+    Raises RuntimeError (not a bare subprocess exception) on either a
+    non-zero exit or a timeout, with enough detail for the synthesizer /
+    Telegram error message to be useful. A timeout is the case the original
+    implementation silently hung on — subprocess.run(..., timeout=...) kills
+    the child process and raises TimeoutExpired, which we convert here.
+    """
+    cmd_str = " ".join(args)
+    logger.info("[APPLY] Running: %s (cwd=%s, timeout=%ss)", cmd_str, cwd, timeout)
+    try:
+        proc = subprocess.run(
+            args,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        stdout = (exc.stdout or "")
+        stderr = (exc.stderr or "")
+        logger.error(
+            "[APPLY] TIMED OUT after %ss: %s\nstdout (partial):\n%s\nstderr (partial):\n%s",
+            timeout, cmd_str, stdout, stderr,
+        )
+        raise RuntimeError(
+            f"'{cmd_str}' timed out after {timeout}s with no result. "
+            "This usually means a stuck process, a stale state lock "
+            "(check for .terraform.tfstate.lock.info), or a hung "
+            "credential/network call. Partial output:\n"
+            f"{(stdout + stderr)[-2000:]}"
+        ) from exc
+
+    logger.info("[APPLY] Completed: %s (exit %s)", cmd_str, proc.returncode)
+    if proc.stdout:
+        logger.debug("[APPLY] stdout for %s:\n%s", cmd_str, proc.stdout)
+    if proc.returncode != 0:
+        logger.error("[APPLY] FAILED: %s (exit %s)\nstderr:\n%s", cmd_str, proc.returncode, proc.stderr)
+        raise RuntimeError(f"'{cmd_str}' failed (exit {proc.returncode}):\n{proc.stderr}")
+
+    return proc
+
+
 def apply_infrastructure(terraform_dir: str, snapshot_dir: str) -> dict:
     """Save a pre-apply state snapshot, then run tofu plan + apply.
 
@@ -165,50 +220,42 @@ def apply_infrastructure(terraform_dir: str, snapshot_dir: str) -> dict:
         {"status": "success", "output": str, "state_snapshot_path": str}
 
     Raises:
-        RuntimeError: if plan or apply exits non-zero; message contains stderr.
+        RuntimeError: if plan/apply exits non-zero OR times out (see
+        APPLY_TIMEOUT_SECONDS / IAI_APPLY_TIMEOUT). Message contains stderr
+        (or partial output, for a timeout) for the caller to surface.
     """
     terraform_dir = os.path.abspath(terraform_dir)
     snapshot_dir = os.path.abspath(snapshot_dir)
     os.makedirs(snapshot_dir, exist_ok=True)
+    logger.info("[APPLY] Starting apply_infrastructure: terraform_dir=%s", terraform_dir)
 
     # Snapshot existing state before touching anything.
     state_src = os.path.join(terraform_dir, "terraform.tfstate")
     state_snapshot = os.path.join(snapshot_dir, "before_apply.tfstate")
     if os.path.exists(state_src):
         shutil.copyfile(state_src, state_snapshot)
+        logger.info("[APPLY] State snapshot created: %s", state_snapshot)
     else:
         # No prior state — write an empty sentinel so the path is always valid.
         with open(state_snapshot, "w") as fh:
             json.dump({}, fh)
+        logger.info("[APPLY] No prior state found; wrote empty snapshot: %s", state_snapshot)
 
     combined_output: list[str] = []
 
+    # --- init (downloads providers; -upgrade picks up new providers like google) ---
+    # Safe to re-run on an already-initialised directory.
+    _run_tofu(["tofu", "init", "-upgrade", "-no-color"], terraform_dir, timeout=180)
+
     # --- plan (surface changes; fail fast before touching real infra) ---
-    plan = subprocess.run(
-        ["tofu", "plan", "-no-color", "-lock=false"],
-        cwd=terraform_dir,
-        capture_output=True,
-        text=True,
-    )
+    plan = _run_tofu(["tofu", "plan", "-no-color", "-lock=false"], terraform_dir)
     combined_output.append(plan.stdout)
-    if plan.returncode != 0:
-        raise RuntimeError(
-            f"tofu plan failed (exit {plan.returncode}):\n{plan.stderr}"
-        )
 
     # --- apply ---
-    apply = subprocess.run(
-        ["tofu", "apply", "-auto-approve", "-no-color"],
-        cwd=terraform_dir,
-        capture_output=True,
-        text=True,
-    )
+    apply = _run_tofu(["tofu", "apply", "-auto-approve", "-no-color"], terraform_dir)
     combined_output.append(apply.stdout)
-    if apply.returncode != 0:
-        raise RuntimeError(
-            f"tofu apply failed (exit {apply.returncode}):\n{apply.stderr}"
-        )
 
+    logger.info("[APPLY] apply_infrastructure complete.")
     return {
         "status": "success",
         "output": "\n".join(combined_output),
@@ -336,6 +383,37 @@ def update_manifest_after_apply(manifest_path: str, tfstate_path: str) -> None:
             reader.update_resource_state(env, resource_name, updates)
 
     reader.write()
+
+
+def apply_and_finalize(terraform_dir: str, snapshot_dir: str, manifest_path: str) -> dict:
+    """Run apply_infrastructure(), then snapshot data-bearing resources and
+    update the manifest with the post-apply state.
+
+    This bundles every blocking step of the approve flow (subprocess calls,
+    boto3 calls, file I/O) into one synchronous call so the caller — the
+    Telegram bot's async callback — can run the whole thing via
+    `asyncio.to_thread()` without leaving the event loop blocked partway
+    through if a later step is slow.
+
+    Returns the apply_infrastructure() result dict on success.
+    Raises whatever the underlying steps raise (RuntimeError for tofu
+    failures/timeouts, boto3 ClientError for snapshot failures, etc.) — the
+    caller is responsible for turning that into a user-facing message.
+    """
+    logger.info("[APPLY] apply_and_finalize starting")
+    apply_result = apply_infrastructure(terraform_dir, snapshot_dir)
+
+    logger.info("[APPLY] Snapshotting data-bearing resources (if any)…")
+    with open(apply_result["state_snapshot_path"]) as fh:
+        before_state = json.load(fh)
+    snapshot_data_bearing_resources(manifest_path, before_state)
+
+    logger.info("[APPLY] Updating manifest with applied resource state…")
+    tfstate_path = os.path.join(os.path.abspath(terraform_dir), "terraform.tfstate")
+    update_manifest_after_apply(manifest_path, tfstate_path)
+
+    logger.info("[APPLY] apply_and_finalize complete")
+    return apply_result
 
 
 def main(argv=None):

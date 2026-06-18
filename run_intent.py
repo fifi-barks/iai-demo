@@ -60,6 +60,15 @@ def main() -> None:
         print(f"✗ Pipeline failed: {exc}")
         sys.exit(1)
 
+    # The agent reasoned the request is ambiguous — surface its question and stop.
+    # Nothing was generated or applied; re-run with a clearer request.
+    if result.get("action") == "clarify":
+        print(result["card"])
+        understanding = (result.get("parsed_intent") or {}).get("understanding")
+        if understanding:
+            print(f"\n(what I understood so far: {understanding})")
+        sys.exit(0)
+
     print("=" * 60)
     print(result["card"])
     print("=" * 60)

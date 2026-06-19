@@ -23,7 +23,13 @@ from telegram.ext import (
 )
 
 from agent.llm_client import active_config
-from bot.intent_handler import handle_approval, process_intent
+from bot.intent_handler import (
+    MAX_CLARIFY_ROUNDS,
+    clarify_question,
+    compose_dialogue,
+    handle_approval,
+    process_intent,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -44,18 +50,30 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    intent = update.message.text
-    logger.info("Intent received: %s...", intent[:60])
-    # Acknowledge immediately so the user knows we're working
+    msg = update.message.text
+    logger.info("Message received: %s...", msg[:60])
+
+    # If we're mid-clarification, this message is an ANSWER — fold it into the
+    # running dialogue and re-resolve the whole conversation, not just this line.
+    history = context.user_data.get("clarify_history")
+    if history:
+        history.append(f"User: {msg}")
+        intent_for_agent = compose_dialogue(history)
+    else:
+        history = [f"User: {msg}"]
+        intent_for_agent = msg
+
     ack = await update.message.reply_text("Reading the manifest and running the gates…")
 
     # process_intent does blocking work (LLM call, OpenTofu plan, Checkov, Infracost).
     # Run it OFF the event loop so the bot stays responsive and a slow gate can't
     # freeze every other update. Any failure becomes a clean message, not a stuck ack.
     try:
-        result = await asyncio.to_thread(process_intent, intent)
+        result = await asyncio.to_thread(process_intent, intent_for_agent)
     except Exception:
         logger.exception("Intent processing failed")
+        context.user_data.pop("clarify_history", None)
+        context.user_data.pop("clarify_rounds", None)
         await ack.edit_text(
             "⚠️ Something went wrong while processing that request. "
             "Check the agent logs (most often a missing INFRACOST_API_KEY or "
@@ -64,15 +82,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     action = result.get("action", "provision")
-    context.user_data["pending_action"] = action
 
-    # The agent decided the request is ambiguous — ask and stop. No buttons,
-    # nothing generated. The user replies with a clearer message to proceed.
+    # Still ambiguous — ask a follow-up, remembering the dialogue so the next
+    # answer composes with it. Cap the rounds so it can never loop forever.
     if action == "clarify":
+        rounds = context.user_data.get("clarify_rounds", 0) + 1
+        if rounds >= MAX_CLARIFY_ROUNDS:
+            context.user_data.pop("clarify_history", None)
+            context.user_data.pop("clarify_rounds", None)
+            await ack.edit_text(
+                "I'm still not sure what you need. Let's restart — describe it in "
+                "one sentence, e.g. \"tear down the payments staging environment.\""
+            )
+            return
+        history.append(f"Agent: {clarify_question(result)}")
+        context.user_data["clarify_history"] = history
+        context.user_data["clarify_rounds"] = rounds
         await ack.edit_text(result["card"])
         return
 
-    # Edit the ack message to show the card (keeps chat tidy; the ack becomes the card)
+    # Resolved — clear the dialogue state and proceed to the approval card.
+    context.user_data.pop("clarify_history", None)
+    context.user_data.pop("clarify_rounds", None)
+    context.user_data["pending_action"] = action
+
     await ack.edit_text(
         f"```\n{result['card']}\n```",
         reply_markup=result["keyboard"],

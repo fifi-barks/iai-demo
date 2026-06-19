@@ -51,7 +51,9 @@ def main() -> None:
     manifest = os.environ.get("IAI_MANIFEST", "manifest.yaml")
     fixture = os.environ.get("IAI_INFRACOST_FIXTURE") or None
 
+    from agent.llm_client import active_config
     print(f"\nIntent: {intent!r}")
+    print(f"LLM:    {active_config()}")
     print("\nRunning gate pipeline…\n")
 
     try:
@@ -59,6 +61,15 @@ def main() -> None:
     except Exception as exc:
         print(f"✗ Pipeline failed: {exc}")
         sys.exit(1)
+
+    # The agent reasoned the request is ambiguous — surface its question and stop.
+    # Nothing was generated or applied; re-run with a clearer request.
+    if result.get("action") == "clarify":
+        print(result["card"])
+        understanding = (result.get("parsed_intent") or {}).get("understanding")
+        if understanding:
+            print(f"\n(what I understood so far: {understanding})")
+        sys.exit(0)
 
     print("=" * 60)
     print(result["card"])

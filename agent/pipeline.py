@@ -135,15 +135,29 @@ def run_pipeline(
     # --- Security gate (direct import) ---
     security_result = security_gate.run_file(main_tf)
 
-    # --- Cost gate (fixture or live infracost) ---
-    if infracost_fixture is not None:
-        infracost_data = load_fixture(infracost_fixture)
-    else:
-        infracost_data = run_infracost(_GENERATED_DIR)
-    cost_result = cost_evaluate(infracost_data)
-    # Attach per-line components for the card (does not alter the gate verdict).
-    cost_result = dict(cost_result)
-    cost_result["components"] = _extract_cost_components(infracost_data)
+    # --- Cost gate (live Infracost by default; fixture only when opted in) ---
+    # run_infracost()/load_fixture() exit CLI-style on failure. Called in-process
+    # (bot/CLI), convert that into a graceful gate error so a bad INFRACOST_API_KEY,
+    # a missing binary, or an absent fixture cannot crash the long-running agent.
+    try:
+        if infracost_fixture is not None:
+            infracost_data = load_fixture(infracost_fixture)
+        else:
+            infracost_data = run_infracost(_GENERATED_DIR)
+        cost_result = dict(cost_evaluate(infracost_data))
+        cost_result["components"] = _extract_cost_components(infracost_data)
+    except (SystemExit, OSError, ValueError) as exc:
+        logger.error("Cost gate failed (%s) — surfacing as unavailable, not crashing", exc)
+        cost_result = {
+            "status": "error",
+            "resource": TARGET_RESOURCE,
+            "monthly_cost": None,
+            "components": [],
+            "message": (
+                "Live Infracost estimate failed — check INFRACOST_API_KEY and that "
+                "infracost is installed (or set IAI_INFRACOST_FIXTURE to run offline)."
+            ),
+        }
 
     # --- Plan gate ---
     plan_result = plan_gate.run_path(_GENERATED_DIR)
@@ -385,28 +399,26 @@ def update_manifest_after_apply(manifest_path: str, tfstate_path: str) -> None:
     reader.write()
 
 
-def _synthesize_destroy_card(resources: list[dict], env: str) -> str:
-    """Build a plain-text destroy preview card from manifest state.
+def _synthesize_destroy_card(resources: list[dict], tf_resource_count: int, env: str) -> str:
+    """Build a plain-text destroy preview card.
 
-    Args:
-        resources: list of dicts with keys: name, resource_id, criticality, cloud.
-        env: environment name (e.g. "staging").
-
-    Returns:
-        Plain-text approval card string.
+    Uses tf_resource_count (from plan_gate, same source as the provision card)
+    so the numbers are consistent with what the user saw during provisioning.
     """
     title = f"{env.capitalize()} environment — teardown plan"
     sep = "━" * len(title)
 
-    count = len(resources)
-    noun = "resource" if count == 1 else "resources"
+    clouds = sorted({r["cloud"].upper() for r in resources})
+    cloud_str = " + ".join(clouds) if clouds else "unknown"
+
     lines = [
         title,
         sep,
-        f"• Resources:  {count} {noun} to destroy (0 to add · 0 to change)",
+        f"• Resources:  {tf_resource_count} across {cloud_str} "
+        f"(0 to add · 0 to change · {tf_resource_count} to destroy)",
     ]
     for r in resources:
-        rid = r.get("resource_id") or "unknown"
+        rid = r.get("resource_id") or "not recorded"
         lines.append(
             f"  ↳ {r['name']}  [{r['criticality']}]  ·  {r['cloud'].upper()}  ·  {rid}"
         )
@@ -422,13 +434,10 @@ def _synthesize_destroy_card(resources: list[dict], env: str) -> str:
 
 
 def run_destroy_pipeline(manifest_path: str, env: str = "staging") -> dict:
-    """Build a destroy preview card from manifest state (no tofu required).
+    """Build a destroy preview card from manifest state + generated HCL count.
 
-    Returns:
-        {
-          "card": str,
-          "to_destroy": list[dict],   # resources with applied state
-        }
+    Uses plan_gate.count_resources() on the generated dir for the TF resource
+    count — same source as the provision card — so the numbers are consistent.
     """
     reader = ManifestReader(manifest_path)
     resources = reader.get_resources(env)
@@ -444,7 +453,14 @@ def run_destroy_pipeline(manifest_path: str, env: str = "staging") -> dict:
             "cloud": res.get("cloud", "unknown"),
         })
 
-    card = _synthesize_destroy_card(to_destroy, env)
+    # Count actual TF resources from the generated HCL so the number matches
+    # what was shown on the provision card. Fall back to manifest count if
+    # the generated dir is empty or missing (e.g. first-time destroy).
+    tf_count = plan_gate.count_resources(_GENERATED_DIR)
+    if tf_count == 0:
+        tf_count = len(to_destroy)
+
+    card = _synthesize_destroy_card(to_destroy, tf_count, env)
     return {"card": card, "to_destroy": to_destroy}
 
 

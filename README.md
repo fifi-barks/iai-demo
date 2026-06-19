@@ -1,99 +1,129 @@
-# iai-demo — v1 (AWS-only)
+# Infrastructure as Intent — Demo (v1)
 
-A proof-of-concept of **Infrastructure as Intent (IAI)** — an AI agent that takes a plain-language business request, generates infrastructure-as-code, validates it through three automated gates, and asks a human to approve a plain-English summary before applying anything.
+**One plain-language sentence in → governed, multi-cloud infrastructure out, with a single human decision in the middle and zero static cloud credentials.**
 
-**v1 focuses on AWS** for a clean, polished demo. Multi-cloud support (GCP, Ansible) deferred to v2.
+A working proof of concept for **Infrastructure as Intent (IAI)**: an AI agent that interprets a business outcome stated in plain language, reasons about it against a living manifest, generates the infrastructure as code, validates it through three gates, synthesizes one human-readable approval card, and applies it on approval — driven from a Telegram message or the CLI.
 
-## What it does
+It is **not a Terraform wrapper.** It is an *intent layer* that sits above the execution engines: it decides which engine owns what, reasons about the request, and checks the result before anything touches real infrastructure. The concept is laid out in the companion whitepaper, *Infrastructure as Intent: Concept and Architecture*.
 
-One sentence in via Telegram → the agent:
+---
 
-1. Reads `manifest.yaml` to know which IaC engine owns each environment
-2. Generates OpenTofu (HCL) for the requested resources
-3. Runs three gates in sequence:
-   - **Plan** — what changes, what's at risk, resource count
-   - **Security** — Checkov + Trivy config scan; flags misconfigurations
-   - **Cost** — Infracost monthly estimate with per-resource breakdown
-4. Synthesizes all three into one human-readable approval card (no raw tool output)
-5. Waits for **[ Approve ] / [ Decline ]**
-6. On approval: takes a state snapshot, takes a native RDS snapshot for data-bearing resources, runs `tofu apply`, updates the manifest
+## The demo in one sentence
 
-## The demo scenario (v1: AWS-only)
+Send this to the bot (or pass it to `run_intent.py`):
 
-**Intent prompt:**
-> "Set up a staging environment for the payments service: a managed Postgres database, an app tier, and a private VPC. Tag it staging, owner payments-team."
+> *"Stand up a staging environment for the payments service: an EC2 app tier in AWS and an export bucket in GCP. Tag it staging, owner payments-team."*
 
-**Resources provisioned:** AWS VPC · 2 private subnets (multi-AZ) · RDS Postgres (data-bearing, critical) · EC2 app tier (inherits critical via dependency) · security groups (~6 resources total)
+About a second later the agent returns one card (real synthesized output):
 
-**What the gates catch:**
-- **Security:** App-tier security group allows SSH inbound from `0.0.0.0/0` — flagged (CKV_AWS_24); approval summary states ingress restricted to VPC CIDR. RDS encryption-at-rest and private access both pass.
-- **Cost:** Infracost estimate with RDS as the dominant monthly cost driver.
-- **Plan:** 6 resources to add, 0 to change, 0 to destroy; critical resources highlighted.
-
-**The approval card the human sees:**
 ```
 Staging environment for payments — ready to build
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• Resources: 6 across AWS (6 to add · 0 to change · 0 to destroy)
-• Cost: ~$45/month (db.t3.small)
-• Security: 1 issue caught — app tier would have been open to 0.0.0.0/0 on SSH.
-            Ingress restricted to the VPC CIDR.
-• Critical: payments-db [data-bearing — snapshot before apply]
-            app-tier [depends on payments-db]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Resources:  3 across AWS + GCP (3 to add · 0 to change · 0 to destroy)
+• Cost:       ~$10/month
+• Security:   1 issue caught — the app tier would have been reachable via SSH
+              from the entire internet (port 22 open to 0.0.0.0/0). Ingress
+              restricted to the VPC CIDR.  IMDSv2 enforced: ✓  Uniform bucket access: ✓
+• Critical:   app-tier [directly critical]
+• Rollback:   Infra state snapshot saved before apply.
+              [ Approve ]   [ Decline ]
 ```
 
-**On approve:** State snapshot → RDS snapshot → `tofu apply` → manifest auto-updates.
+Tap **Approve** → it provisions across both clouds (keyless) → the manifest rewrites itself with the new resource IDs. Under two minutes, end to end.
 
-## Cloud & region
+## The agent reasons — and asks when it isn't sure
 
-| Cloud | Region | Auth |
-|-------|--------|------|
-| AWS | `ap-southeast-5` (Kuala Lumpur, Malaysia) | EC2 instance role via IMDSv2 |
-
-**v1 is AWS-only.** Multi-cloud support (GCP, physical hardware) planned for v2.
-
-No static credentials anywhere in the codebase; all auth via instance metadata service.
-
-## Repo layout
+The intent layer doesn't pattern-match keywords. It interprets the request **against the manifest** (the source of truth for what exists and which engine owns it) and decides an action: provision, modify, destroy — or **clarify**. If a request is ambiguous or under-specified, the agent asks one short question instead of guessing, and nothing is generated until you answer:
 
 ```
-agent/
-  pipeline.py           end-to-end gate runner + apply_infrastructure + snapshot_data_bearing_resources
-  iac_generator.py      manifest → OpenTofu HCL
-  manifest_reader.py    YAML reader with transitive criticality resolution
-  approval_synthesizer.py  three gate results → one approval card
-
-gates/
-  security_gate.py      Checkov (primary) + Trivy config (secondary)
-  cost_gate.py          Infracost wrapper + budget threshold check
-  plan_gate.py          resource count + tofu validate
-
-bot/
-  telegram_bot.py       Telegram interface + Approve/Decline buttons
-  intent_handler.py     routes intent → pipeline → card
-
-terraform/staging/      reference OpenTofu module (VPC, RDS, EC2, GCP bucket)
-manifest.yaml           platform manifest — human-authored, agent-maintained state blocks
-docs/                   manifest spec, demo scenario detail
-research/findings/      verifiable SecOps + FinOps specs that back the gates
-tests/                  golden fixtures (known-bad must flag, known-good must pass)
-scripts/                infra setup scripts (EC2 launch)
+$ python run_intent.py "set something up for payments"
+❓ Did you mean the existing 'staging' environment, or a new one?
+(what I understood so far: the user wants infrastructure for payments but didn't specify the environment)
 ```
 
-## Running locally
+A fully specified request is acted on directly; only genuinely unclear ones are sent to clarify. This is the IAI thesis in miniature — the agent reasons about intent and earns trust by asking at the edges rather than guessing.
+
+---
+
+## Architecture
+
+![IAI demo architecture](docs/architecture.png)
+
+1. **Intent** — a plain-language request arrives via Telegram or the CLI.
+2. **Parse + reason** — an LLM interprets the request against the manifest and decides the action (or asks to clarify). Runs on a fast hosted model (**Groq**, sub-second) by default, with Ollama and a keyword passthrough as fallbacks, so it still runs offline.
+3. **Read the manifest** — resolve which engine owns each resource and the org's standards.
+4. **Generate** — write **OpenTofu** for the requested resources (EC2 instance + security group on AWS, a GCS bucket on GCP).
+5. **Three gates** — **plan** (what changes), **security** (Checkov + Trivy config), **cost** (Infracost). The security gate catches the app-tier SG open to `0.0.0.0/0` and restricts it, while genuine good practice passes (IMDSv2, uniform bucket access).
+6. **One card** — all three gates folded into a single plain-language summary.
+7. **Human approves** — nothing is applied before the tap.
+8. **Apply, keyless** — snapshot first, then OpenTofu applies. AWS via the EC2 instance role; GCP via Workload Identity Federation. No static cloud credentials anywhere.
+9. **Self-updating manifest** — after a clean apply the agent rewrites the manifest with the new reality and the reasoning behind it.
+
+---
+
+## What's in scope (and what isn't)
+
+**In scope (v1):** multi-cloud provisioning of **AWS EC2 + security group** (`ap-southeast-5`) and a **GCP Cloud Storage bucket** (`asia-southeast1`); manifest-grounded reasoning with a clarify path; three-gate validation with a genuine security catch; the synthesized approval UX; keyless apply; the self-updating manifest; cross-cloud normalization (AWS tags vs GCP labels).
+
+**Out of scope (declared in the manifest, not built):** the Ansible / physical-hardware engine; image baking / CI (the demo consumes a pre-baked AMI); a full multi-turn clarification conversation (v1 asks once and stops — you re-send a clearer request).
+
+---
+
+## Quickstart
 
 ```bash
-python -m venv venv && source venv/bin/activate
+# 1. Clone
+git clone git@github.com:fifi-barks/iai-demo.git && cd iai-demo
+
+# 2. Python environment
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# Run the full gate pipeline against the manifest (no apply)
-python -m agent.pipeline --manifest manifest.yaml --env staging
+# 3. Configure — copy the template and fill in your keys
+cp .env.example .env
+$EDITOR .env                 # set GROQ_API_KEY (free, no card: console.groq.com/keys)
+set -a && source .env && set +a
 
-# Run with a pre-captured Infracost fixture (no live infracost needed)
-python -m agent.pipeline --manifest manifest.yaml --infracost-fixture tests/fixtures/infracost_payments_db_pass.json
+# 4. Run via CLI (no messaging infrastructure required)
+python run_intent.py "Stand up a staging environment for the payments service: an EC2 app tier in AWS and an export bucket in GCP."
+#   → prints the approval card, prompts Approve? [y/N], then applies + updates the manifest
 
-# Run the test suite
-python -m pytest tests/
+# 5. Run via Telegram instead (needs TELEGRAM_BOT_TOKEN)
+python -m bot.telegram_bot
+
+# Tear down
+tofu -chdir=terraform/generated destroy   # or re-run with a destroy intent
 ```
 
-Requires: `checkov`, `trivy`, `tofu` (OpenTofu), `infracost` on PATH for live runs. Fixtures cover all gates for offline testing.
+**Prerequisites:** OpenTofu ≥ 1.7, Checkov, Trivy, Infracost (with API key), Python ≥ 3.10 on PATH. A **Groq API key** (free, no card) for fast reasoning — or set `IAI_LLM_PROVIDER=ollama` for a local model, or `none` to run on the keyword passthrough. AWS + GCP are **keyless**: an EC2 instance role and GCP Workload Identity Federation provide credentials at runtime — there are no static cloud keys in this project. The cost gate runs **Infracost live by default** (it prices the resources actually generated, so it needs a valid `INFRACOST_API_KEY`). To run offline — tests, CI, or a recorded demo where you want a deterministic figure and no network call — set `IAI_INFRACOST_FIXTURE=tests/fixtures/infracost_app_tier_pass.json`.
+
+---
+
+## Repository layout
+
+```
+agent/   llm_client (intent reasoning), pipeline (gates + apply), iac_generator,
+         manifest_reader, approval_synthesizer
+gates/   plan / security (Checkov + Trivy) / cost (Infracost)
+bot/     telegram_bot, intent_handler
+run_intent.py      CLI entry point
+manifest.yaml      platform manifest — human-authored, agent-maintained state
+docs/              architecture diagram, manifest spec, demo scenario
+tests/             golden fixtures: known-bad must flag, known-good must pass
+```
+
+---
+
+## Security posture
+
+The agent runs **keyless** to the clouds — AWS via the EC2 instance role (IMDSv2), GCP via Workload Identity Federation. The only secret is the **LLM API key**, which is a SaaS inference key (not a cloud credential) and lives strictly in the environment via `.env` — never in source. `.env` is gitignored. The security gate runs on every generation, and nothing applies without explicit human approval.
+
+---
+
+## Roadmap
+
+Richer estate (managed databases with data-aware rollback and transitive criticality), the Ansible / physical-hardware engine, a full multi-turn clarification conversation, and tool self-discovery (selecting an engine without manifest guidance). The whitepaper series goes deeper — II on SecOps, III on FinOps.
+
+---
+
+*"Infrastructure as Intent" is a concept coined in this work. © Elaia Raj.*

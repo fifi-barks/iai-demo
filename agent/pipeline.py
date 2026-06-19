@@ -399,11 +399,36 @@ def update_manifest_after_apply(manifest_path: str, tfstate_path: str) -> None:
     reader.write()
 
 
-def _synthesize_destroy_card(resources: list[dict], tf_resource_count: int, env: str) -> str:
+def _total_monthly_cost(infracost_data: dict) -> float | None:
+    """Best-effort total monthly cost across the project — used as the teardown
+    savings figure (what stops being billed once these resources are destroyed)."""
+    total = infracost_data.get("totalMonthlyCost")
+    if total is not None:
+        try:
+            return float(total)
+        except (TypeError, ValueError):
+            pass
+    summed, found = 0.0, False
+    for project in infracost_data.get("projects", []):
+        breakdown = project.get("breakdown") or {}
+        tmc = breakdown.get("totalMonthlyCost")
+        if tmc is not None:
+            try:
+                summed += float(tmc)
+                found = True
+            except (TypeError, ValueError):
+                pass
+    return summed if found else None
+
+
+def _synthesize_destroy_card(
+    resources: list[dict], tf_resource_count: int, env: str, savings: float | None = None
+) -> str:
     """Build a plain-text destroy preview card.
 
     Uses tf_resource_count (from plan_gate, same source as the provision card)
     so the numbers are consistent with what the user saw during provisioning.
+    `savings` is the monthly cost that stops being billed after teardown.
     """
     title = f"{env.capitalize()} environment — teardown plan"
     sep = "━" * len(title)
@@ -422,6 +447,12 @@ def _synthesize_destroy_card(resources: list[dict], tf_resource_count: int, env:
         lines.append(
             f"  ↳ {r['name']}  [{r['criticality']}]  ·  {r['cloud'].upper()}  ·  {rid}"
         )
+    # Cost savings — round to the nearest $5 to match the provision card's figure.
+    if savings is not None:
+        shown = int(round(savings / 5.0) * 5) if savings >= 2.5 else round(savings, 2)
+        lines.append(f"• Savings:    ~${shown}/month no longer billed once destroyed.")
+    else:
+        lines.append("• Savings:    monthly cost estimate unavailable.")
     critical = [r["name"] for r in resources if r.get("criticality") == "critical"]
     if critical:
         names = ", ".join(critical)
@@ -433,11 +464,16 @@ def _synthesize_destroy_card(resources: list[dict], tf_resource_count: int, env:
     return "\n".join(lines)
 
 
-def run_destroy_pipeline(manifest_path: str, env: str = "staging") -> dict:
+def run_destroy_pipeline(
+    manifest_path: str, env: str = "staging", infracost_fixture: str | None = None
+) -> dict:
     """Build a destroy preview card from manifest state + generated HCL count.
 
     Uses plan_gate.count_resources() on the generated dir for the TF resource
     count — same source as the provision card — so the numbers are consistent.
+    Also estimates the monthly cost that stops being billed (teardown savings),
+    using the same Infracost source as provisioning (live by default; fixture
+    when IAI_INFRACOST_FIXTURE is set).
     """
     reader = ManifestReader(manifest_path)
     resources = reader.get_resources(env)
@@ -460,8 +496,23 @@ def run_destroy_pipeline(manifest_path: str, env: str = "staging") -> dict:
     if tf_count == 0:
         tf_count = len(to_destroy)
 
-    card = _synthesize_destroy_card(to_destroy, tf_count, env)
-    return {"card": card, "to_destroy": to_destroy}
+    # Teardown savings = the monthly cost of what's currently deployed. Same
+    # graceful handling as the provision cost gate: a missing key / binary /
+    # fixture shows "unavailable" rather than blocking the teardown.
+    savings = None
+    try:
+        if infracost_fixture is not None:
+            infracost_data = load_fixture(infracost_fixture)
+        else:
+            infracost_data = run_infracost(_GENERATED_DIR)
+        savings = _total_monthly_cost(infracost_data)
+        if savings is None:
+            savings = cost_evaluate(infracost_data).get("monthly_cost")
+    except (SystemExit, OSError, ValueError) as exc:
+        logger.warning("Teardown savings estimate unavailable (%s)", exc)
+
+    card = _synthesize_destroy_card(to_destroy, tf_count, env, savings)
+    return {"card": card, "to_destroy": to_destroy, "savings": savings}
 
 
 def destroy_and_reset(terraform_dir: str, manifest_path: str) -> dict:

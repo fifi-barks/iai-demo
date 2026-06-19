@@ -108,9 +108,16 @@ gates/   plan / security (Checkov + Trivy) / cost (Infracost)
 bot/     telegram_bot, intent_handler
 run_intent.py      CLI entry point
 manifest.yaml      platform manifest — human-authored, agent-maintained state
-docs/              architecture diagram, manifest spec, demo scenario
+docs/              how-it-works, architecture + stack diagrams, manifest spec
 tests/             golden fixtures: known-bad must flag, known-good must pass
 ```
+
+---
+
+## Documentation
+
+- **[GETTING_STARTED.md](GETTING_STARTED.md)** — prerequisites, how to get each API key, and a full clone-to-running walkthrough with troubleshooting.
+- **[docs/how-it-works.md](docs/how-it-works.md)** — the end-to-end flow, the tool stack, and why each technology was chosen.
 
 ---
 

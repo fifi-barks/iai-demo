@@ -56,19 +56,35 @@ def main() -> None:
     print(f"LLM:    {active_config()}")
     print("\nRunning gate pipeline…\n")
 
+    from bot.intent_handler import MAX_CLARIFY_ROUNDS, clarify_question, compose_dialogue
+
+    def _resolve(text):
+        return process_intent(text, manifest_path=manifest, infracost_fixture=fixture)
+
     try:
-        result = process_intent(intent, manifest_path=manifest, infracost_fixture=fixture)
+        result = _resolve(intent)
+        # If the agent needs clarification, answer it interactively and re-resolve
+        # the accumulated dialogue — same multi-turn behavior as the Telegram bot.
+        history = [f"User: {intent}"]
+        rounds = 0
+        while result.get("action") == "clarify" and rounds < MAX_CLARIFY_ROUNDS:
+            print(result["card"])
+            try:
+                answer = input("> ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print("\nCancelled.")
+                sys.exit(0)
+            history.append(f"Agent: {clarify_question(result)}")
+            history.append(f"User: {answer}")
+            result = _resolve(compose_dialogue(history))
+            rounds += 1
     except Exception as exc:
         print(f"✗ Pipeline failed: {exc}")
         sys.exit(1)
 
-    # The agent reasoned the request is ambiguous — surface its question and stop.
-    # Nothing was generated or applied; re-run with a clearer request.
     if result.get("action") == "clarify":
-        print(result["card"])
-        understanding = (result.get("parsed_intent") or {}).get("understanding")
-        if understanding:
-            print(f"\n(what I understood so far: {understanding})")
+        print("\nStill ambiguous — try restating it in one sentence "
+              "(e.g. \"tear down the payments staging environment\").")
         sys.exit(0)
 
     print("=" * 60)

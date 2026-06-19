@@ -8,6 +8,7 @@ manifest, generates IaC, runs all three gates (security, cost, plan),
 and replies with a synthesized approval card + Approve/Decline buttons.
 """
 
+import asyncio
 import logging
 import os
 
@@ -21,6 +22,7 @@ from telegram.ext import (
     filters,
 )
 
+from agent.llm_client import active_config
 from bot.intent_handler import handle_approval, process_intent
 
 logging.basicConfig(level=logging.INFO)
@@ -31,9 +33,9 @@ WELCOME = (
     "Describe what you need in plain language. I'll read the manifest, "
     "generate the infrastructure, run security and cost checks, and come "
     "back with a summary for you to approve or decline.\n\n"
-    "Try: \"Stand up a staging environment for the payments service: a "
-    "managed Postgres, an app compute tier, and a private network in AWS, "
-    "plus an object-storage bucket in GCP for export files.\""
+    "Try: \"Stand up a staging environment for the payments service: an EC2 "
+    "app tier in AWS and an export bucket in GCP. Tag it staging, owner "
+    "payments-team.\""
 )
 
 
@@ -43,11 +45,24 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     intent = update.message.text
-    logger.info(f"Intent received: {intent[:60]}...")
+    logger.info("Intent received: %s...", intent[:60])
     # Acknowledge immediately so the user knows we're working
     ack = await update.message.reply_text("Reading the manifest and running the gates…")
 
-    result = process_intent(intent)
+    # process_intent does blocking work (LLM call, OpenTofu plan, Checkov, Infracost).
+    # Run it OFF the event loop so the bot stays responsive and a slow gate can't
+    # freeze every other update. Any failure becomes a clean message, not a stuck ack.
+    try:
+        result = await asyncio.to_thread(process_intent, intent)
+    except Exception:
+        logger.exception("Intent processing failed")
+        await ack.edit_text(
+            "⚠️ Something went wrong while processing that request. "
+            "Check the agent logs (most often a missing INFRACOST_API_KEY or "
+            "LLM key in .env)."
+        )
+        return
+
     action = result.get("action", "provision")
     context.user_data["pending_action"] = action
 
@@ -78,7 +93,7 @@ def main() -> None:
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(handle_approval, pattern="^approve$"))
     app.add_handler(CallbackQueryHandler(handle_decline, pattern="^decline$"))
-    logger.info("IAI bot polling…")
+    logger.info("IAI bot polling… LLM %s", active_config())
     app.run_polling()
 
 

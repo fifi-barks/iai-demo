@@ -22,10 +22,10 @@ from agent.llm_client import parse_intent
 logger = logging.getLogger(__name__)
 
 MANIFEST_PATH = os.environ.get("IAI_MANIFEST", "manifest.yaml")
-INFRACOST_FIXTURE = os.environ.get(
-    "IAI_INFRACOST_FIXTURE",
-    "tests/fixtures/infracost_app_tier_pass.json",
-)
+# Live Infracost by default — the cost gate prices what was actually generated.
+# Set IAI_INFRACOST_FIXTURE to a saved Infracost JSON file to run offline instead
+# (tests / CI / a recorded demo where determinism matters). None => live.
+INFRACOST_FIXTURE = os.environ.get("IAI_INFRACOST_FIXTURE") or None
 
 APPROVE_LABEL = "✅ Approve"
 DECLINE_LABEL = "❌ Decline"

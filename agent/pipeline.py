@@ -135,15 +135,29 @@ def run_pipeline(
     # --- Security gate (direct import) ---
     security_result = security_gate.run_file(main_tf)
 
-    # --- Cost gate (fixture or live infracost) ---
-    if infracost_fixture is not None:
-        infracost_data = load_fixture(infracost_fixture)
-    else:
-        infracost_data = run_infracost(_GENERATED_DIR)
-    cost_result = cost_evaluate(infracost_data)
-    # Attach per-line components for the card (does not alter the gate verdict).
-    cost_result = dict(cost_result)
-    cost_result["components"] = _extract_cost_components(infracost_data)
+    # --- Cost gate (live Infracost by default; fixture only when opted in) ---
+    # run_infracost()/load_fixture() exit CLI-style on failure. Called in-process
+    # (bot/CLI), convert that into a graceful gate error so a bad INFRACOST_API_KEY,
+    # a missing binary, or an absent fixture cannot crash the long-running agent.
+    try:
+        if infracost_fixture is not None:
+            infracost_data = load_fixture(infracost_fixture)
+        else:
+            infracost_data = run_infracost(_GENERATED_DIR)
+        cost_result = dict(cost_evaluate(infracost_data))
+        cost_result["components"] = _extract_cost_components(infracost_data)
+    except (SystemExit, OSError, ValueError) as exc:
+        logger.error("Cost gate failed (%s) — surfacing as unavailable, not crashing", exc)
+        cost_result = {
+            "status": "error",
+            "resource": TARGET_RESOURCE,
+            "monthly_cost": None,
+            "components": [],
+            "message": (
+                "Live Infracost estimate failed — check INFRACOST_API_KEY and that "
+                "infracost is installed (or set IAI_INFRACOST_FIXTURE to run offline)."
+            ),
+        }
 
     # --- Plan gate ---
     plan_result = plan_gate.run_path(_GENERATED_DIR)

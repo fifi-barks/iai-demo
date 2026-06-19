@@ -51,7 +51,9 @@ def main() -> None:
     manifest = os.environ.get("IAI_MANIFEST", "manifest.yaml")
     fixture = os.environ.get("IAI_INFRACOST_FIXTURE") or None
 
+    from agent.llm_client import active_config
     print(f"\nIntent: {intent!r}")
+    print(f"LLM:    {active_config()}")
     print("\nRunning gate pipeline…\n")
 
     try:

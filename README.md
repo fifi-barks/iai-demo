@@ -95,7 +95,7 @@ python -m bot.telegram_bot
 tofu -chdir=terraform/generated destroy   # or re-run with a destroy intent
 ```
 
-**Prerequisites:** OpenTofu ≥ 1.7, Checkov, Trivy, Infracost (with API key), Python ≥ 3.10 on PATH. A **Groq API key** (free, no card) for fast reasoning — or set `IAI_LLM_PROVIDER=ollama` for a local model, or `none` to run on the keyword passthrough. AWS + GCP are **keyless**: an EC2 instance role and GCP Workload Identity Federation provide credentials at runtime — there are no static cloud keys in this project. Offline, the gates can run against the bundled Infracost fixture: `IAI_INFRACOST_FIXTURE=tests/fixtures/infracost_app_tier_pass.json`.
+**Prerequisites:** OpenTofu ≥ 1.7, Checkov, Trivy, Infracost (with API key), Python ≥ 3.10 on PATH. A **Groq API key** (free, no card) for fast reasoning — or set `IAI_LLM_PROVIDER=ollama` for a local model, or `none` to run on the keyword passthrough. AWS + GCP are **keyless**: an EC2 instance role and GCP Workload Identity Federation provide credentials at runtime — there are no static cloud keys in this project. The cost gate runs **Infracost live by default** (it prices the resources actually generated, so it needs a valid `INFRACOST_API_KEY`). To run offline — tests, CI, or a recorded demo where you want a deterministic figure and no network call — set `IAI_INFRACOST_FIXTURE=tests/fixtures/infracost_app_tier_pass.json`.
 
 ---
 

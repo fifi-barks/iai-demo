@@ -46,6 +46,19 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+# Load .env from the repo root as early as possible, so the process reliably has
+# IAI_LLM_PROVIDER / *_API_KEY / INFRACOST_API_KEY however it was launched (systemd,
+# a bare shell, `python -m`, the Telegram service). Real environment variables
+# (shell exports, systemd EnvironmentFile) are NOT overridden — they still win.
+# dotenv is optional; without it the code falls back to the ambient environment.
+try:
+    from pathlib import Path
+    from dotenv import load_dotenv
+
+    load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+except ImportError:  # pragma: no cover
+    logger.debug("python-dotenv not installed; relying on the ambient environment")
+
 # OpenAI-compatible providers: name -> (base_url, api_key_env_NAME, default_model)
 # The middle field is the NAME of the environment variable that holds the key —
 # never the key itself. Keys live in the environment, not in source.
@@ -59,9 +72,47 @@ MANIFEST_PATH = os.environ.get("IAI_MANIFEST", "manifest.yaml")
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/generate")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "phi")
 
-_HOSTED_TIMEOUT = 20   # seconds — hosted inference is sub-second; generous headroom
-_OLLAMA_TIMEOUT = 120  # seconds — local phi is slow
-_MANIFEST_MAX_CHARS = 4000  # keep the grounding context compact
+_HOSTED_TIMEOUT = 20          # seconds — hosted inference is sub-second
+_OLLAMA_CONNECT_TIMEOUT = 3   # seconds — fail fast if Ollama isn't even listening
+_OLLAMA_READ_TIMEOUT = 60     # seconds — local models are slow, but never hang for 2 min
+_MANIFEST_MAX_CHARS = 4000    # keep the grounding context compact
+
+
+def _resolve_provider(quiet: bool = False) -> str:
+    """Pick the LLM provider from the environment.
+
+    Explicit IAI_LLM_PROVIDER wins. Otherwise prefer whichever hosted key is
+    present (fast), and only fall back to local Ollama as a last resort — LOUDLY,
+    because Ollama is slow and silently defaulting to it is the classic
+    "why is my demo hanging for two minutes" trap.
+    """
+    provider = os.environ.get("IAI_LLM_PROVIDER", "").strip().lower()
+    if provider:
+        return provider
+    for name in ("groq", "cerebras", "openai"):
+        if os.environ.get(_OPENAI_COMPATIBLE[name][1]):
+            return name
+    if not quiet:
+        logger.warning(
+            "No IAI_LLM_PROVIDER set and no hosted LLM key found — defaulting to "
+            "local Ollama (slow; requires `ollama serve`). For fast inference set "
+            "IAI_LLM_PROVIDER=groq and GROQ_API_KEY (see .env.example)."
+        )
+    return "ollama"
+
+
+def active_config() -> str:
+    """One-line summary of the resolved LLM config — log this at startup so a
+    misconfiguration is visible immediately instead of as a slow failure."""
+    provider = _resolve_provider(quiet=True)
+    if provider in _OPENAI_COMPATIBLE:
+        _, key_env, default_model = _OPENAI_COMPATIBLE[provider]
+        model = os.environ.get("IAI_LLM_MODEL", default_model)
+        key_state = "set" if os.environ.get(key_env) else "MISSING"
+        return f"provider={provider} model={model} key={key_state}"
+    if provider == "ollama":
+        return f"provider=ollama model={OLLAMA_MODEL} url={OLLAMA_URL}"
+    return f"provider={provider}"
 
 # The reasoning brief. {manifest} is filled at call time so the agent decides
 # against what actually exists, not a fixed schema.
@@ -134,9 +185,7 @@ def parse_intent(user_message: str, manifest_path: str | None = None) -> dict:
     manifest_text = _load_manifest_text(manifest_path or MANIFEST_PATH)
     system_prompt = _PROMPT_TEMPLATE.format(manifest=manifest_text)
 
-    provider = os.environ.get("IAI_LLM_PROVIDER", "").strip().lower()
-    if not provider:
-        provider = "groq" if os.environ.get("GROQ_API_KEY") else "ollama"
+    provider = _resolve_provider()
 
     try:
         if provider in _OPENAI_COMPATIBLE:
@@ -192,7 +241,7 @@ def _parse_ollama(user_message: str, system_prompt: str) -> dict:
     resp = requests.post(
         OLLAMA_URL,
         json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False, "format": "json"},
-        timeout=_OLLAMA_TIMEOUT,
+        timeout=(_OLLAMA_CONNECT_TIMEOUT, _OLLAMA_READ_TIMEOUT),
     )
     resp.raise_for_status()
     raw = resp.json().get("response", "")

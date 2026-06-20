@@ -1,21 +1,27 @@
 # Branching Strategy — iai-demo
 
+Trunk-based: **`main` is the single source of truth.** It's always deployable and
+it's what people clone. Work happens on short-lived `feature/*` branches and
+merges back via pull request.
+
 ## Branches
 
-- **main** — stable, tagged releases only. No direct commits.
-- **develop** — integration branch. Default target for PRs.
-- **feature/*** — all development work, branched off `develop` (e.g., `feature/manifest-auto-update`, `feature/phase4-video`)
+- **main** — the trunk. Stable, always working. Releases are tagged here.
+- **feature/*** — development work, branched off `main` (e.g.
+  `feature/resource-scoped-destroy`). Short-lived; delete after merge.
 
 ## Workflow
 
-1. Branch off develop: `git checkout develop && git checkout -b feature/my-feature`
-2. Work and commit
-3. Push: `git push origin feature/my-feature`
-4. Open PR to `develop` on GitHub
-5. Review + merge
-6. When `develop` is stable, open PR to `main`
-7. Tag the release: `git tag -a v0.2.0 -m "Release 0.2.0"`
-8. Push the tag: `git push origin v0.2.0`
+1. Branch off main: `git checkout main && git pull && git checkout -b feature/my-feature`
+2. Work and commit.
+3. Push: `git push -u origin feature/my-feature`
+4. Open a PR to `main` on GitHub, review, and merge.
+5. Delete the feature branch.
+6. Tag releases on `main` and bump `VERSION` to match:
+   `git tag -a v1.1.0 -m "Release 1.1.0" && git push origin v1.1.0`
+
+For small fixes, committing straight to `main` is fine — this is a solo demo
+repo, not a regulated release pipeline.
 
 ## Current version
 

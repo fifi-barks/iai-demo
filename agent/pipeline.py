@@ -30,6 +30,7 @@ import boto3
 from agent.approval_synthesizer import ApprovalSynthesizer
 from agent.iac_generator import IaCGenerator
 from agent.manifest_reader import ManifestReader
+from agent.remediation import remediate
 from gates import plan_gate, security_gate
 from gates.cost_gate import evaluate as cost_evaluate
 from gates.cost_gate import load_fixture, run_infracost, TARGET_RESOURCE
@@ -132,8 +133,18 @@ def run_pipeline(
     """
     main_tf = _prepare_generated_module(manifest_path, env)
 
-    # --- Security gate (direct import) ---
+    # --- Security gate: detect ---
     security_result = security_gate.run_file(main_tf)
+
+    # --- Remediate what was flagged, then RE-SCAN to confirm the fix cleared it.
+    # The agent doesn't just report the risk — it rewrites the generated HCL to
+    # remove it, and we re-run the gate so the card reports the true post-fix
+    # state of the config that will actually be applied. ---
+    remediations = remediate(main_tf, security_result.get("findings", []))
+    if remediations:
+        security_result = security_gate.run_file(main_tf)
+    security_result = dict(security_result)
+    security_result["remediations"] = remediations
 
     # --- Cost gate (live Infracost by default; fixture only when opted in) ---
     # run_infracost()/load_fixture() exit CLI-style on failure. Called in-process

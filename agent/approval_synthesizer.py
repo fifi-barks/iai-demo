@@ -21,10 +21,13 @@ _RULE = "━" * 47
 
 # Plain-English descriptions for watched security findings. Keyed by check_id,
 # but the card never exposes the id itself.
+# Detection-only wording, used for any finding that was NOT auto-remediated.
+# (When the agent fixes an issue, the remediation note describes what it did —
+# this string must never claim a fix that didn't happen.)
 _FINDING_DESCRIPTIONS = {
     "CKV_AWS_24": (
-        "the app tier would have been reachable via SSH from the entire internet "
-        "(port 22 open to 0.0.0.0/0). Ingress restricted to the VPC CIDR."
+        "the app tier would be reachable via SSH from the entire internet "
+        "(port 22 open to 0.0.0.0/0)"
     ),
 }
 
@@ -148,6 +151,7 @@ class ApprovalSynthesizer:
     # --- Security lines -----------------------------------------------------
 
     def _security_lines(self, security_result: dict) -> list:
+        remediations = (security_result or {}).get("remediations", []) or []
         findings = (security_result or {}).get("findings", []) or []
         passed = (security_result or {}).get("passed_checks", []) or []
 
@@ -158,21 +162,30 @@ class ApprovalSynthesizer:
             desc for cid, desc in _PASSED_DESCRIPTIONS.items() if cid in passed_set
         ]
 
-        if not findings:
-            return self._wrap_security("All security checks pass.", passed_phrases)
+        parts = []
 
-        n = len(findings)
-        noun = "issue" if n == 1 else "issues"
-        descriptions = []
-        for f in findings:
-            cid = f.get("check_id")
-            if cid in _FINDING_DESCRIPTIONS:
-                descriptions.append(_FINDING_DESCRIPTIONS[cid])
-            else:
-                descriptions.append(
-                    f"a security issue was detected on {f.get('resource')}."
+        # Issues the agent caught AND fixed (re-scan confirmed clear).
+        if remediations:
+            n = len(remediations)
+            noun = "issue" if n == 1 else "issues"
+            notes = " ".join(
+                r.get("note", "a security issue was fixed") for r in remediations
+            )
+            parts.append(f"{n} {noun} caught and fixed — {notes}. Re-scan confirms it now passes.")
+
+        # Issues that remain flagged (not auto-remediated) — surfaced for the human.
+        if findings:
+            m = len(findings)
+            noun = "issue" if m == 1 else "issues"
+            descs = " ".join(
+                _FINDING_DESCRIPTIONS.get(
+                    f.get("check_id"), f"a security issue on {f.get('resource')}"
                 )
-        text = f"{n} {noun} caught — {' '.join(descriptions)}"
+                for f in findings
+            )
+            parts.append(f"{m} {noun} flagged for review — {descs}.")
+
+        text = "  ".join(parts) if parts else "All security checks pass."
         return self._wrap_security(text, passed_phrases)
 
     def _wrap_security(self, text: str, atomic_suffixes: list | None = None) -> list:

@@ -21,9 +21,10 @@ Staging environment for payments — ready to build
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 • Resources:  3 across AWS + GCP (3 to add · 0 to change · 0 to destroy)
 • Cost:       ~$10/month
-• Security:   1 issue caught — the app tier would have been reachable via SSH
-              from the entire internet (port 22 open to 0.0.0.0/0). Ingress
-              restricted to the VPC CIDR.  IMDSv2 enforced: ✓  Uniform bucket access: ✓
+• Security:   1 issue caught and fixed — the app tier would have been reachable
+              via SSH from the entire internet (port 22 open to 0.0.0.0/0);
+              ingress narrowed to a private range. Re-scan confirms it now passes.
+              IMDSv2 enforced: ✓  Uniform bucket access: ✓
 • Critical:   app-tier [directly critical]
 • Rollback:   Infra state snapshot saved before apply.
               [ Approve ]   [ Decline ]

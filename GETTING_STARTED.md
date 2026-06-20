@@ -15,11 +15,13 @@ You need these on your `PATH`. Versions shown are minimums.
 
 | Tool | Purpose | Install |
 |---|---|---|
-| Python ≥ 3.10 | runs the agent | your OS package manager / python.org |
-| OpenTofu ≥ 1.7 | generates & applies IaC | <https://opentofu.org/docs/intro/install/> · `brew install opentofu` |
-| Infracost | cost gate | <https://www.infracost.io/docs/#quick-start> · `brew install infracost` |
-| Trivy | security gate | <https://trivy.dev/latest/getting-started/installation/> · `brew install trivy` |
+| Python ≥ 3.10 | runs the agent | your OS package manager, or python.org |
+| OpenTofu ≥ 1.7 | generates & applies IaC | <https://opentofu.org/docs/intro/install/> |
+| Infracost | cost gate | <https://www.infracost.io/docs/#quick-start> |
+| Trivy | security gate | <https://trivy.dev/latest/getting-started/installation/> |
 | Checkov | security gate | installed via `requirements.txt` (pip) |
+
+Each tool's install page covers Linux, macOS, and Windows — follow whichever matches your machine. The demo's reference host is Ubuntu 22.04.
 
 Quick check once installed:
 
@@ -131,6 +133,20 @@ Re-run with a destroy intent (e.g. *"tear down the payments staging environment"
 ```bash
 tofu -chdir=terraform/generated destroy
 ```
+
+---
+
+## 7. Run the tests
+
+The suite is **hermetic** — it uses golden fixtures and the offline passthrough, so it needs only the Python dependencies. No cloud tools, no API keys, no network:
+
+```bash
+source .venv/bin/activate
+pip install -r requirements.txt pytest
+python -m pytest tests/
+```
+
+You should see **35 passed**. They cover the manifest reader (parsing, criticality, comment-preserving round-trip), the IaC generator (tagging, criticality transitivity, greenfield enforcement), the gates' output handling and golden security fixtures (known-bad must flag, known-good must pass), and the full black-box flow (intent → card, cost figure traces back to the gate, no raw tool output leaks into the summary). To exercise the gates against the *live* tools instead of fixtures, install OpenTofu, Checkov, Trivy, and Infracost (step 1) and run the pipeline via the CLI.
 
 ---
 

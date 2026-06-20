@@ -39,9 +39,7 @@ WELCOME = (
     "Describe what you need in plain language. I'll read the manifest, "
     "generate the infrastructure, run security and cost checks, and come "
     "back with a summary for you to approve or decline.\n\n"
-    "Try: \"Stand up a staging environment for the payments service: an EC2 "
-    "app tier in AWS and an export bucket in GCP. Tag it staging, owner "
-    "payments-team.\""
+    "Try: \"Set up the payments staging environment.\""
 )
 
 
@@ -101,11 +99,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await ack.edit_text(result["card"])
         return
 
-    # Resolved — clear the dialogue state and proceed to the approval card.
+    # Resolved — clear the dialogue state.
     context.user_data.pop("clarify_history", None)
     context.user_data.pop("clarify_rounds", None)
-    context.user_data["pending_action"] = action
 
+    # Nothing to do (e.g. destroy when nothing is provisioned) — inform, no buttons.
+    if action == "noop":
+        await ack.edit_text(result["card"])
+        return
+
+    context.user_data["pending_action"] = action
     await ack.edit_text(
         f"```\n{result['card']}\n```",
         reply_markup=result["keyboard"],

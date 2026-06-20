@@ -12,7 +12,7 @@ It is **not a Terraform wrapper.** It is an *intent layer* that sits above the e
 
 Send this to the bot (or pass it to `run_intent.py`):
 
-> *"Stand up a staging environment for the payments service: an EC2 app tier in AWS and an export bucket in GCP. Tag it staging, owner payments-team."*
+> *"Set up the payments staging environment."*
 
 About a second later the agent returns one card (real synthesized output):
 
@@ -85,7 +85,7 @@ $EDITOR .env                 # set GROQ_API_KEY (free, no card: console.groq.com
 set -a && source .env && set +a
 
 # 4. Run via CLI (no messaging infrastructure required)
-python run_intent.py "Stand up a staging environment for the payments service: an EC2 app tier in AWS and an export bucket in GCP."
+python run_intent.py "Set up the payments staging environment."
 #   → prints the approval card, prompts Approve? [y/N], then applies + updates the manifest
 
 # 5. Run via Telegram instead (needs TELEGRAM_BOT_TOKEN)

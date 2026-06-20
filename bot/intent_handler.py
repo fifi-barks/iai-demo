@@ -112,6 +112,18 @@ def process_intent(
     if intent_type == "destroy":
         from agent.pipeline import run_destroy_pipeline
         result = run_destroy_pipeline(manifest_path, infracost_fixture=infracost_fixture)
+        # Nothing is actually provisioned — inform, don't offer an approval card.
+        if result.get("nothing_to_destroy"):
+            return {
+                "card": result["card"],
+                "keyboard": None,
+                "raw": None,
+                "action": "noop",
+                "approve_label": APPROVE_LABEL,
+                "decline_label": DECLINE_LABEL,
+                "intent": intent_text,
+                "parsed_intent": parsed_intent,
+            }
         keyboard = InlineKeyboardMarkup([[
             InlineKeyboardButton(APPROVE_LABEL, callback_data="approve"),
             InlineKeyboardButton(DECLINE_LABEL, callback_data="decline"),

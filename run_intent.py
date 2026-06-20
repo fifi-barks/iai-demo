@@ -2,8 +2,7 @@
 """IAI CLI — run the full intent pipeline without Telegram.
 
 Usage:
-    python run_intent.py "Stand up a staging environment for the payments service: \
-an EC2 app tier in AWS and an export bucket in GCP."
+    python run_intent.py "Set up the payments staging environment."
 
 Environment variables (all optional):
     IAI_MANIFEST          Path to manifest.yaml (default: manifest.yaml)
@@ -12,7 +11,7 @@ Environment variables (all optional):
                           the generated HCL (requires infracost on PATH).
 
 The pipeline:
-    intent text → Ollama/phi parse (or passthrough if Ollama not running)
+    intent text → LLM parse (Groq by default; passthrough fallback)
                → manifest read → IaC generate → three-gate validation
                → synthesized approval card → y/n prompt → apply (if approved)
                → manifest state update
@@ -42,10 +41,7 @@ def main() -> None:
         print("Usage: python run_intent.py \"<intent text>\"")
         print()
         print("Example:")
-        print(
-            '  python run_intent.py "Stand up a staging environment for the payments '
-            'service: an EC2 app tier in AWS and an export bucket in GCP."'
-        )
+        print('  python run_intent.py "Set up the payments staging environment."')
         sys.exit(1)
 
     manifest = os.environ.get("IAI_MANIFEST", "manifest.yaml")
@@ -85,6 +81,11 @@ def main() -> None:
     if result.get("action") == "clarify":
         print("\nStill ambiguous — try restating it in one sentence "
               "(e.g. \"tear down the payments staging environment\").")
+        sys.exit(0)
+
+    # Nothing to do (e.g. destroy when nothing is provisioned).
+    if result.get("action") == "noop":
+        print(result["card"])
         sys.exit(0)
 
     print("=" * 60)

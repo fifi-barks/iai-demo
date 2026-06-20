@@ -479,22 +479,38 @@ def run_destroy_pipeline(
     resources = reader.get_resources(env)
     criticality = reader.resolve_criticality(env)
 
+    # Only resources the manifest records as actually deployed can be destroyed.
+    # The manifest state is the source of truth — NOT the generated HCL, which may
+    # be left over from a prior run. A resource counts as live if its state says
+    # "applied" or it carries a real resource_id.
     to_destroy = []
     for name, res in resources.items():
-        state = res.get("state", {})
+        state = res.get("state", {}) or {}
+        rid = state.get("resource_id")
+        is_applied = state.get("status") == "applied" or rid not in (None, "", "~")
+        if not is_applied:
+            continue
         to_destroy.append({
             "name": name,
-            "resource_id": state.get("resource_id"),
+            "resource_id": rid,
             "criticality": criticality.get(name, "unknown"),
             "cloud": res.get("cloud", "unknown"),
         })
 
-    # Count actual TF resources from the generated HCL so the number matches
-    # what was shown on the provision card. Fall back to manifest count if
-    # the generated dir is empty or missing (e.g. first-time destroy).
-    tf_count = plan_gate.count_resources(_GENERATED_DIR)
-    if tf_count == 0:
-        tf_count = len(to_destroy)
+    # Nothing is deployed → nothing to destroy. Say so plainly; no approval card,
+    # no teardown. This is the state-tracking the manifest exists for.
+    if not to_destroy:
+        return {
+            "card": (
+                f"Nothing to destroy — the manifest shows no resources currently "
+                f"provisioned in '{env}' (all pending)."
+            ),
+            "to_destroy": [],
+            "savings": 0.0,
+            "nothing_to_destroy": True,
+        }
+
+    count = len(to_destroy)
 
     # Teardown savings = the monthly cost of what's currently deployed. Same
     # graceful handling as the provision cost gate: a missing key / binary /
@@ -511,7 +527,7 @@ def run_destroy_pipeline(
     except (SystemExit, OSError, ValueError) as exc:
         logger.warning("Teardown savings estimate unavailable (%s)", exc)
 
-    card = _synthesize_destroy_card(to_destroy, tf_count, env, savings)
+    card = _synthesize_destroy_card(to_destroy, count, env, savings)
     return {"card": card, "to_destroy": to_destroy, "savings": savings}
 
 

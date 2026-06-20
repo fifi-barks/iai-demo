@@ -99,11 +99,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await ack.edit_text(result["card"])
         return
 
-    # Resolved — clear the dialogue state and proceed to the approval card.
+    # Resolved — clear the dialogue state.
     context.user_data.pop("clarify_history", None)
     context.user_data.pop("clarify_rounds", None)
-    context.user_data["pending_action"] = action
 
+    # Nothing to do (e.g. destroy when nothing is provisioned) — inform, no buttons.
+    if action == "noop":
+        await ack.edit_text(result["card"])
+        return
+
+    context.user_data["pending_action"] = action
     await ack.edit_text(
         f"```\n{result['card']}\n```",
         reply_markup=result["keyboard"],

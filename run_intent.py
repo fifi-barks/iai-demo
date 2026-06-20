@@ -83,6 +83,11 @@ def main() -> None:
               "(e.g. \"tear down the payments staging environment\").")
         sys.exit(0)
 
+    # Nothing to do (e.g. destroy when nothing is provisioned).
+    if result.get("action") == "noop":
+        print(result["card"])
+        sys.exit(0)
+
     print("=" * 60)
     print(result["card"])
     print("=" * 60)

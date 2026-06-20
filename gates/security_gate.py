@@ -6,8 +6,8 @@ Tertiary: Trivy image scanning (supply-chain).
 
 Checkov filters its findings down to WATCHED_CHECKS so the synthesized approval
 card can speak plainly about exactly the issues that matter — and about the
-checks that *passed* (the on-camera "discrimination beat": the gate is doing
-real work, not stamping everything green).
+checks that *passed* (the "discrimination" signal: the gate is doing real work,
+not stamping everything green).
 
 Trivy config is run as secondary when available. Its findings for the same
 watched checks are surfaced in `trivy_config_findings` on the result dict. Trivy

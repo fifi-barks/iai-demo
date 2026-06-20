@@ -96,7 +96,7 @@ resource "aws_security_group" "app_tier_good_sg" {
 
 ## Notes
 
-**Why CKV_AWS_24 is the right check for this demo:** The demo's on-camera catch is SSH (port 22) open to `0.0.0.0/0`. CKV_AWS_24 is purpose-built for exactly this case: it checks for unrestricted internet ingress on port 22 specifically. CKV_AWS_277 is a separate check that covers `protocol = "-1"` (all-traffic) rules only; the tester confirmed it does NOT fire on specific-port rules including port 22. The Developer must ensure the demo Terraform uses `aws_security_group` with an inline ingress block, not `aws_vpc_security_group_ingress_rule`, to avoid any partial-coverage edge cases.
+**Why CKV_AWS_24 is the right check for this demo:** The demo's security catch is SSH (port 22) open to `0.0.0.0/0`. CKV_AWS_24 is purpose-built for exactly this case: it checks for unrestricted internet ingress on port 22 specifically. CKV_AWS_277 is a separate check that covers `protocol = "-1"` (all-traffic) rules only; the tester confirmed it does NOT fire on specific-port rules including port 22. The Developer must ensure the demo Terraform uses `aws_security_group` with an inline ingress block, not `aws_vpc_security_group_ingress_rule`, to avoid any partial-coverage edge cases.
 
 **Demo narrative:** The approval summary should state plainly: "The app tier security group would have been reachable via SSH from the entire internet (0.0.0.0/0 on port 22). Ingress has been restricted to the VPC CIDR." This is framed as the kind of default humans miss, not a planted bug. The contrast with passing RDS checks (see sec-rds-encryption-and-access.md) is what makes the gate read as discrimination rather than noise.
 

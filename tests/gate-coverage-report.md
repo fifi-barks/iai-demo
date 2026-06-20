@@ -36,7 +36,7 @@ checkov -f terraform/staging/main.tf --check CKV_AWS_24,CKV_AWS_16,CKV_AWS_17 --
 - `aws_db_instance.payments_db` → CKV_AWS_16 **PASSED** (correct)
 - `aws_db_instance.payments_db` → CKV_AWS_17 **PASSED** (correct)
 
-**Verdict: The demo discrimination pattern holds.** The security gate flags the SG misconfiguration (SSH port 22 open to the internet) and passes the correctly-configured RDS instance. The on-camera narrative is intact.
+**Verdict: The demo discrimination pattern holds.** The security gate flags the SG misconfiguration (SSH port 22 open to the internet) and passes the correctly-configured RDS instance. The demo narrative is intact.
 
 ---
 

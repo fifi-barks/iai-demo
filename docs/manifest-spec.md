@@ -60,8 +60,8 @@ environments:
       aws: ap-southeast-5      # Kuala Lumpur, Malaysia — default for all AWS resources
       gcp: asia-southeast1     # Singapore — default for all GCP resources
     # Note: GCP uses 'labels' where AWS uses 'tags'. The agent normalises both from the
-    # intent prompt before generating IaC — the on-camera contrast demonstrates the
-    # normalization layer without extra narration.
+    # intent prompt before generating IaC — this cross-cloud contrast demonstrates the
+    # normalization layer.
     tags:
       environment: staging
       owner: payments-team
@@ -115,7 +115,7 @@ environments:
 
       export-bucket:
         # Why: GCP object-storage bucket for payments export files.
-        # Deliberately cross-cloud to demonstrate multi-cloud normalisation on camera.
+        # Deliberately cross-cloud to demonstrate multi-cloud normalisation.
         # Must NOT default to public-read — security gate flags this as a critical finding.
         cloud: gcp
         type: google_storage_bucket
@@ -129,7 +129,7 @@ environments:
 
   edge-network:
     # Why: physical Cisco switching layer. Declared for architectural completeness;
-    # not built in demo v1.0.0 — switches can't be filmed.
+    # not built in demo v1.0.0 — physical hardware is out of scope.
     # Revisit for v2 if a physical networking leg is added.
     engine: ansible
     scope: out-of-scope-v1

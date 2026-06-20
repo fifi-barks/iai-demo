@@ -46,7 +46,4 @@
 - [x] Data-aware snapshot — `agent/pipeline.py::snapshot_data_bearing_resources` (RDS snapshot before apply for data-bearing resources) — 2026-06-09
 - [ ] Manifest auto-update after apply
 
-## Milestone 4 — Demo video
-- [ ] Tester: full black-box run green end to end
-- [ ] Agent running on EC2 (pending instance launch + setup)
-- [ ] Record: manifest setup → bot prompt → multi-cloud apply → manifest update
+

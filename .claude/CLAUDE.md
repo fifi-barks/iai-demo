@@ -8,11 +8,11 @@ A proof-of-concept of **Infrastructure as Intent (IAI)**: an AI agent that recei
 
 **The agent is the orchestrator. The tools are execution engines.** This is *not* a Terraform wrapper.
 
-The deliverable is **one LinkedIn demo video**, not a product. Every technical decision serves that single end-to-end narrative. Scope ruthlessly.
+The deliverable is a working demo. Every technical decision serves that single end-to-end narrative. Scope ruthlessly.
 
 ## The non-negotiable: gate accuracy
 
-The IAI thesis is that a human can trust the agent's synthesized summary enough to approve infrastructure without reading raw tool output. That trust is only earned if **the security and cost gates are accurate.** A gate that misses a known-bad config, or misstates cost, breaks the entire premise — on camera.
+The IAI thesis is that a human can trust the agent's synthesized summary enough to approve infrastructure without reading raw tool output. That trust is only earned if **the security and cost gates are accurate.** A gate that misses a known-bad config, or misstates cost, breaks the entire premise.
 
 Gate accuracy is a **tested property**, not an aspiration. The Tester maintains golden fixtures (known-bad must flag, known-good must pass, cost estimates must reconcile against a reference). No gate ships without passing fixtures.
 

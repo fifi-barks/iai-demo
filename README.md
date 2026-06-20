@@ -95,7 +95,15 @@ python -m bot.telegram_bot
 tofu -chdir=terraform/generated destroy   # or re-run with a destroy intent
 ```
 
-**Prerequisites:** OpenTofu ≥ 1.7, Checkov, Trivy, Infracost (with API key), Python ≥ 3.10 on PATH. A **Groq API key** (free, no card) for fast reasoning — or set `IAI_LLM_PROVIDER=ollama` for a local model, or `none` to run on the keyword passthrough. AWS + GCP are **keyless**: an EC2 instance role and GCP Workload Identity Federation provide credentials at runtime — there are no static cloud keys in this project. The cost gate runs **Infracost live by default** (it prices the resources actually generated, so it needs a valid `INFRACOST_API_KEY`). To run offline — tests, CI, or a recorded demo where you want a deterministic figure and no network call — set `IAI_INFRACOST_FIXTURE=tests/fixtures/infracost_app_tier_pass.json`.
+### Prerequisites
+
+- **Tools on `PATH`:** Python ≥ 3.10, OpenTofu ≥ 1.7, Checkov, Trivy, Infracost.
+- **LLM reasoning:** a free **Groq API key** (no credit card). Or set `IAI_LLM_PROVIDER=ollama` for a local model, or `none` to run on the keyword passthrough.
+- **Cost gate:** a valid **`INFRACOST_API_KEY`** — the gate runs Infracost live by default (it prices what was actually generated). To run offline with a deterministic figure, set `IAI_INFRACOST_FIXTURE=tests/fixtures/infracost_app_tier_pass.json` instead.
+- **Cloud credentials:** none to configure — AWS + GCP are **keyless** (EC2 instance role + GCP Workload Identity Federation provide them at runtime). No static cloud keys anywhere in this project.
+- **Telegram (optional):** a bot token from @BotFather — only for the Telegram interface; the CLI needs none.
+
+Full setup, including how to get each API key, is in **[GETTING_STARTED.md](GETTING_STARTED.md)**.
 
 ---
 
@@ -129,7 +137,15 @@ The agent runs **keyless** to the clouds — AWS via the EC2 instance role (IMDS
 
 ## Roadmap
 
-Richer estate (managed databases with data-aware rollback and transitive criticality), the Ansible / physical-hardware engine, a full multi-turn clarification conversation, and tool self-discovery (selecting an engine without manifest guidance). The whitepaper series goes deeper — II on SecOps, III on FinOps.
+- **Azure** as a third cloud provider, alongside AWS and GCP.
+- **Idle health-check loop** — a persistent background agent that continuously reconciles the manifest against live state for drift, cost, and compliance between provisioning runs.
+- **Richer estate** — managed databases with data-aware rollback and transitive criticality.
+- **Resource-scoped destroy** — tear down individual resources, not only whole environments.
+- **Ansible / physical-hardware engine** — the declared-but-not-built leg of the manifest.
+- **Tool self-discovery** — selecting an execution engine without manifest guidance.
+- **Cross-session conversational memory** — clarification context that persists beyond a single session.
+
+The whitepaper series goes deeper — II on SecOps, III on FinOps.
 
 ---
 

@@ -76,6 +76,7 @@ _HOSTED_TIMEOUT = 20          # seconds — hosted inference is sub-second
 _OLLAMA_CONNECT_TIMEOUT = 3   # seconds — fail fast if Ollama isn't even listening
 _OLLAMA_READ_TIMEOUT = 60     # seconds — local models are slow, but never hang for 2 min
 _MANIFEST_MAX_CHARS = 4000    # keep the grounding context compact
+_CONFIDENCE_FLOOR = 0.6       # below this, ask instead of acting — it's a bot, asking is free
 
 
 def _resolve_provider(quiet: bool = False) -> str:
@@ -136,6 +137,12 @@ Choose exactly one action:
 - "destroy"   — tear down existing resources. THIS IS IRREVERSIBLE.
 - "clarify"   — ask ONE specific question instead of guessing.
 
+Default stance: WHEN IN DOUBT, ASK. You are a conversational bot — a clarifying
+question is cheap and safe; acting on a wrong assumption is not. Never assume,
+infer, or fill in a detail the user did not give. Resolve an action ONLY when the
+request unambiguously identifies an existing target in the inventory; in every
+other case, "clarify".
+
 Rules:
 - Identify the exact target environment from the inventory. Put it in
   `target_environment` and name it in `understanding`.
@@ -146,19 +153,29 @@ Rules:
   exact environment to act on by name. Never destroy on an inferred guess.
   (Teardown removes the WHOLE environment; it cannot remove individual resources,
   so do not offer that as an option.)
-- PROVISION may be resolved directly when the environment/resources are clearly
-  described.
+- PROVISION may be resolved directly ONLY when the request identifies WHAT to
+  create — an environment, a service, or specific resources that map to the
+  inventory. If the request is vague or contentless ("set up something", "do it",
+  "create infrastructure", "go"), CLARIFY.
+- Do NOT assume a target just because only ONE environment exists in the
+  inventory. A request must actually point at it; never fill the blank yourself.
 - A clarify "question" must be SPECIFIC and reference the real options from the
   inventory — name the environment(s) and what they contain. Never ask a generic
   question like "which resource or environment?".
 - One question maximum. Be concise.
 
 Worked examples (for the inventory below):
+- "set up the payments staging environment" / "provision staging" → provision;
+  understanding: "Provision the 'staging' environment (payments service): app-tier
+  and export-bucket." (the target is named and unambiguous → act)
 - "tear down the staging environment" → destroy; understanding: "Tear down the
   'staging' environment (payments service): app-tier and export-bucket."
 - "get rid of them" / "delete payments" → clarify; question: "Just to confirm —
   tear down the entire 'staging' environment (payments service: app-tier and
   export-bucket)? This is irreversible."
+- "set up something" / "do it" → clarify; question: "What would you like me to
+  set up? The only environment defined is 'staging' (payments service: app-tier
+  and export-bucket) — provision that?"
 
 Platform inventory:
 ---
@@ -390,6 +407,26 @@ def _coerce(parsed: dict) -> dict:
     parsed.setdefault("target_environment", None)
     parsed.setdefault("resources", [])
     parsed.setdefault("clouds", [])
+
+    # Backstop: it's a bot — asking is free, a wrong assumption is not. If the
+    # model picked an action but wasn't confident, downgrade to a clarification
+    # rather than acting on a guess. (Prompt is the primary guard; this catches
+    # model wobble deterministically.)
+    conf = parsed.get("confidence")
+    if (
+        intent_type in ("provision", "modify", "destroy")
+        and isinstance(conf, (int, float))
+        and conf < _CONFIDENCE_FLOOR
+    ):
+        logger.info("Low confidence (%.2f) on %s — downgrading to clarify", conf, intent_type)
+        intent_type = "clarify"
+        parsed["intent_type"] = "clarify"
+        if not parsed.get("question"):
+            u = parsed.get("understanding")
+            parsed["question"] = (
+                f"Before I act — {u} Is that right?" if u
+                else "Could you confirm exactly what you'd like me to do?"
+            )
 
     # clarify and needs_clarification must agree.
     needs = bool(parsed.get("needs_clarification")) or intent_type == "clarify"

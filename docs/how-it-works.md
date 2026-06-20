@@ -55,6 +55,6 @@ The result is a system where the *intent* — the reasoning about what the busin
 
 ---
 
-## Honest scope (v1)
+## Honest scope (v1.0.0)
 
-The demo provisions a deliberately small set — an AWS EC2 instance + security group and a GCP Cloud Storage bucket (3 resources) — chosen to exercise every part of the pipeline (multi-cloud, a real security catch, live cost, criticality, keyless apply, self-updating manifest) while staying fast to build and tear down. The Ansible / physical-hardware engine is declared in the manifest but out of scope; image baking / CI is upstream; and the clarification dialogue resolves in a few turns rather than holding long-term memory. These are scope choices for v1, not limits of the model.
+The demo provisions a deliberately small set — an AWS EC2 instance + security group and a GCP Cloud Storage bucket (3 resources) — chosen to exercise every part of the pipeline (multi-cloud, a real security catch, live cost, criticality, keyless apply, self-updating manifest) while staying fast to build and tear down. The Ansible / physical-hardware engine is declared in the manifest but out of scope; image baking / CI is upstream; and the clarification dialogue resolves in a few turns rather than holding long-term memory. These are scope choices for v1.0.0, not limits of the model.

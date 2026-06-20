@@ -1,4 +1,4 @@
-# Infrastructure as Intent — Demo (v1)
+# Infrastructure as Intent — Demo (v1.0.0)
 
 **One plain-language sentence in → governed, multi-cloud infrastructure out, with a single human decision in the middle and zero static cloud credentials.**
 
@@ -63,9 +63,9 @@ A fully specified request is acted on directly; only genuinely unclear ones are 
 
 ## What's in scope (and what isn't)
 
-**In scope (v1):** multi-cloud provisioning of **AWS EC2 + security group** (`ap-southeast-5`) and a **GCP Cloud Storage bucket** (`asia-southeast1`); manifest-grounded reasoning with a clarify path; three-gate validation with a genuine security catch; the synthesized approval UX; keyless apply; the self-updating manifest; cross-cloud normalization (AWS tags vs GCP labels).
+**In scope (v1.0.0):** multi-cloud provisioning of **AWS EC2 + security group** (`ap-southeast-5`) and a **GCP Cloud Storage bucket** (`asia-southeast1`); manifest-grounded reasoning with a clarify path; three-gate validation with a genuine security catch; the synthesized approval UX; keyless apply; the self-updating manifest; cross-cloud normalization (AWS tags vs GCP labels).
 
-**Out of scope (declared in the manifest, not built):** the Ansible / physical-hardware engine; image baking / CI (the demo consumes a pre-baked AMI); a full multi-turn clarification conversation (v1 asks once and stops — you re-send a clearer request).
+**Out of scope (v1.0.0):** the Ansible / physical-hardware engine (declared in the manifest, not built); image baking / CI (the demo consumes a pre-baked AMI); and long-term conversational memory (clarifications resolve over a few turns within a session, not across sessions).
 
 ---
 

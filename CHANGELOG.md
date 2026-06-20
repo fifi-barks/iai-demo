@@ -1,28 +1,25 @@
-
 # Changelog — iai-demo
 
-All notable changes to this project will be documented in this file.
+All notable changes to this project are documented here.
 
-## [0.1.0] — 2026-06-09
+## [1.0.0] — 2026-06-20
+
+First public release.
 
 ### Added
-- Phase 1: OpenTofu stack (not Terraform), immutable pre-baked image, Checkov+Trivy (config+image)
-- Phase 2: Keyless credentials (AWS EC2 instance role + Workload Identity Federation to GCP)
-- Phase 3: Multi-cloud apply, data-aware rollback (RDS snapshots), manifest auto-update
-- Three-gate validation: plan, security (Checkov+Trivy), cost (Infracost)
-- Telegram interface for intent input
-- Approval synthesizer (no raw output to human)
-- Demo scenario: Payments staging environment (AWS VPC+RDS+app tier, GCP bucket)
+- **Intent layer** — an AI agent that turns plain-language intent into validated, multi-cloud infrastructure under a single human approval. Not a Terraform wrapper.
+- **Manifest-grounded reasoning** — Groq (Llama 3.3 70B) by default, with a local Ollama (Phi 3.8B) fallback and a keyword passthrough, so it stays fast, self-hostable, and never hard-fails. Asks a clarifying question when a request is ambiguous, and remembers the dialogue across turns.
+- **Manifest-driven generation** to OpenTofu; the annotated-YAML manifest is a self-updating source of truth (comments preserved via `ruamel.yaml`).
+- **Three-gate validation** before any human sees a change — plan, security (Checkov + Trivy), live cost (Infracost) — synthesized into one approval card.
+- **State-aware teardown** — reads OpenTofu state to report exactly what will be destroyed (with monthly savings), and refuses to "destroy" when nothing is provisioned.
+- **Keyless execution** — AWS via EC2 instance role (IMDSv2), GCP via Workload Identity Federation. No static cloud keys anywhere.
+- **Two front-ends** over the same pipeline: a Telegram bot and a CLI (`run_intent.py`).
+- Demo scenario: payments staging — AWS EC2 instance + security group, GCP Cloud Storage bucket.
 
-### Locked Design Decisions
-- Manifest-driven tool selection
-- Criticality tagging (transitive through dependency graph)
-- No clarification engine in v1
-- No Ansible in v1 (declared out-of-scope)
-- Keyless credentials (no static keys in codebase or environment)
-
----
+### Scope (v1.0.0)
+- Two clouds (AWS + GCP). The Ansible / physical-hardware engine is declared in the manifest but out of scope.
+- Clarification resolves over a few turns within a session rather than holding long-term memory.
 
 ## [Unreleased]
 
-Future enhancements to be determined.
+Future: resource-scoped destroy, provision-side state awareness, a richer estate (managed databases with data-aware rollback), and tool self-discovery.

@@ -38,10 +38,10 @@ After a successful apply the agent rewrites only the `state:` block of each affe
 
 ---
 
-## Schema — full annotated example (payments staging, v1)
+## Schema — full annotated example (payments staging, v1.0.0)
 
 ```yaml
-# Platform Manifest — payments service, v1
+# Platform Manifest — payments service, v1.0.0
 # Why: staging environment for the payments service spanning AWS (network + data + compute)
 # and GCP (export storage). Mirrors prod topology at reduced scale; provisioned greenfield.
 #
@@ -129,7 +129,7 @@ environments:
 
   edge-network:
     # Why: physical Cisco switching layer. Declared for architectural completeness;
-    # not built in demo v1 — switches can't be filmed.
+    # not built in demo v1.0.0 — switches can't be filmed.
     # Revisit for v2 if a physical networking leg is added.
     engine: ansible
     scope: out-of-scope-v1

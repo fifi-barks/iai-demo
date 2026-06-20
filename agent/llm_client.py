@@ -119,28 +119,48 @@ def active_config() -> str:
 _PROMPT_TEMPLATE = """\
 You are the intent agent for Infrastructure as Intent (IAI).
 
-A human describes what they want in plain language. Interpret the request and
-decide what the system should do, grounded in the platform manifest below — the
-source of truth for what exists, which engine owns each resource, and the
-organization's standards. Reason about intent; do not pattern-match keywords.
+A human describes what they want in plain language. Decide what the system should
+do, grounded in the platform inventory below. Reason about intent; do not
+pattern-match keywords.
+
+How the platform is organised:
+- An ENVIRONMENT (e.g. "staging") is the deployable unit. It belongs to a SERVICE
+  (shown by its owner, e.g. "payments-team") and contains RESOURCES (e.g. an EC2
+  app tier, a storage bucket).
+- A user request may name a service, an environment, or specific resources. Your
+  job is to map it to a specific environment that exists in the inventory.
 
 Choose exactly one action:
-- "provision" — stand up / create the described environment or resources.
+- "provision" — create the described environment or resources.
 - "modify"    — change something that already exists.
-- "destroy"   — tear down / decommission existing resources.
-- "clarify"   — the request is ambiguous, missing essential detail, or asks for
-                something the manifest does not cover. Do NOT guess — ask.
+- "destroy"   — tear down existing resources. THIS IS IRREVERSIBLE.
+- "clarify"   — ask ONE specific question instead of guessing.
 
 Rules:
-- Ground every decision in the manifest; map the request to an existing
-  environment when you can.
-- Choose "clarify" only when the action or its target is genuinely unclear, or
-  the request conflicts with the manifest. A fully specified request must be
-  acted on, never sent to clarify.
-- When clarifying, ask at most ONE short, specific question.
-- Be decisive and concise.
+- Identify the exact target environment from the inventory. Put it in
+  `target_environment` and name it in `understanding`.
+- DESTROY and MODIFY are impactful. Resolve them directly ONLY when the user
+  EXPLICITLY names an existing environment (e.g. "tear down staging"). If the
+  request is vague ("get rid of them", "delete it") or names only a service or a
+  resource ("payments", "the bucket"), you MUST "clarify" first — confirm the
+  exact environment to act on by name. Never destroy on an inferred guess.
+  (Teardown removes the WHOLE environment; it cannot remove individual resources,
+  so do not offer that as an option.)
+- PROVISION may be resolved directly when the environment/resources are clearly
+  described.
+- A clarify "question" must be SPECIFIC and reference the real options from the
+  inventory — name the environment(s) and what they contain. Never ask a generic
+  question like "which resource or environment?".
+- One question maximum. Be concise.
 
-Platform manifest:
+Worked examples (for the inventory below):
+- "tear down the staging environment" → destroy; understanding: "Tear down the
+  'staging' environment (payments service): app-tier and export-bucket."
+- "get rid of them" / "delete payments" → clarify; question: "Just to confirm —
+  tear down the entire 'staging' environment (payments service: app-tier and
+  export-bucket)? This is irreversible."
+
+Platform inventory:
 ---
 {manifest}
 ---
@@ -161,9 +181,9 @@ Return ONLY a JSON object (no markdown, no prose) with this shape:
 Field notes:
 - confidence: 0.0–1.0, your confidence in the chosen action.
 - needs_clarification: true only when intent_type is "clarify".
-- question: one sentence for the user, only when clarifying; otherwise "".
-- understanding: one plain sentence restating what the user wants.
-- target_environment: the manifest environment this maps to, or null."""
+- question: one specific sentence for the user, only when clarifying; otherwise "".
+- understanding: one plain sentence naming the exact environment and what the user wants.
+- target_environment: the inventory environment this maps to, or null."""
 
 _DESTROY_KEYWORDS = {
     "tear down", "teardown", "destroy", "decommission",
@@ -182,8 +202,8 @@ def parse_intent(user_message: str, manifest_path: str | None = None) -> dict:
     confidence, needs_clarification, question, understanding, target_environment,
     resources, clouds, requirements.
     """
-    manifest_text = _load_manifest_text(manifest_path or MANIFEST_PATH)
-    system_prompt = _PROMPT_TEMPLATE.format(manifest=manifest_text)
+    inventory = _manifest_summary(manifest_path or MANIFEST_PATH)
+    system_prompt = _PROMPT_TEMPLATE.format(manifest=inventory)
 
     provider = _resolve_provider()
 
@@ -272,6 +292,63 @@ def _passthrough(user_message: str) -> dict:
             "tags": {},
         },
     }
+
+
+def _manifest_summary(manifest_path: str) -> str:
+    """A concise, structured inventory of the manifest for the reasoning prompt.
+
+    Clearer for the model than raw YAML-with-comments: it lists each environment,
+    its owning service (owner tag), clouds, deployment state, and resources — so
+    the agent can map "payments" → the staging environment and ask precise
+    questions. Falls back to raw manifest text if parsing fails.
+    """
+    try:
+        from ruamel.yaml import YAML
+
+        with open(manifest_path, "r", encoding="utf-8") as fh:
+            data = YAML(typ="safe").load(fh) or {}
+        envs = data.get("environments", {}) or {}
+
+        in_scope, out_scope = [], []
+        for name, env in envs.items():
+            if not isinstance(env, dict):
+                continue
+            if str(env.get("scope", "")).startswith("out-of-scope"):
+                out_scope.append(f"{name} ({env.get('engine', '?')})")
+                continue
+            tags = env.get("tags", {}) or {}
+            owner = tags.get("owner", "?")
+            clouds = ", ".join(env.get("clouds", []) or []) or "?"
+            resources = env.get("resources", {}) or {}
+            statuses = {
+                (r.get("state", {}) or {}).get("status", "pending")
+                for r in resources.values()
+                if isinstance(r, dict)
+            }
+            if statuses and statuses <= {"applied"}:
+                state = "applied/live"
+            elif statuses <= {"pending", ""} or not statuses:
+                state = "not yet provisioned"
+            else:
+                state = "mixed"
+            res_desc = ", ".join(
+                f"{rn} ({r.get('type', '?')}, {r.get('criticality', '?')})"
+                for rn, r in resources.items()
+                if isinstance(r, dict)
+            ) or "none"
+            in_scope.append(
+                f'- "{name}" — owner {owner} · clouds: {clouds} · state: {state}\n'
+                f"    resources: {res_desc}"
+            )
+
+        lines = ["Environments (the deployable units):"]
+        lines += in_scope or ["  (none defined)"]
+        if out_scope:
+            lines.append("Declared but OUT OF SCOPE (cannot act on): " + "; ".join(out_scope))
+        return "\n".join(lines)
+    except Exception as exc:  # noqa: BLE001 — fall back to raw text, never block parsing
+        logger.debug("manifest summary failed (%s); using raw manifest text", exc)
+        return _load_manifest_text(manifest_path)
 
 
 def _load_manifest_text(manifest_path: str) -> str:

@@ -1,0 +1,99 @@
+<svg viewBox="0 0 1000 660" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arr" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#8693a6"/>
+    </marker>
+    <style>
+      .t { font-size:21px; font-weight:700; fill:#1f3a5f; }
+      .st { font-size:12.5px; fill:#5b6b82; }
+      .layer { font-size:14px; font-weight:700; fill:#1f3a5f; }
+      .lnum { font-size:11px; font-weight:700; fill:#8693a6; }
+      .why { font-size:11px; fill:#41526b; }
+      .pill { font-size:11px; font-weight:700; fill:#ffffff; }
+      .axis { font-size:10.5px; font-weight:700; fill:#8693a6; }
+    </style>
+  </defs>
+
+  <text x="500" y="38" text-anchor="middle" class="t">IAI Demo — Tools &amp; Integration</text>
+  <text x="500" y="60" text-anchor="middle" class="st">Each layer, the tool that powers it, and why it was chosen</text>
+
+  <!-- flow axis -->
+  <line x1="34" y1="100" x2="34" y2="612" stroke="#cbd5e1" stroke-width="2" marker-end="url(#arr)"/>
+  <text x="20" y="356" text-anchor="middle" class="axis" transform="rotate(-90 20 356)">intent  →  execution</text>
+
+  <!-- Band 1: Interface -->
+  <rect x="60" y="96" width="910" height="80" rx="10" fill="#f6f8fc" stroke="#e2e8f0"/>
+  <rect x="60" y="96" width="6" height="80" rx="3" fill="#0f766e"/>
+  <text x="86" y="128" class="lnum">1</text>
+  <text x="86" y="146" class="layer">Interface</text>
+  <rect x="210" y="122" width="118" height="22" rx="11" fill="#1f3a5f"/>
+  <text x="269" y="137" text-anchor="middle" class="pill">Telegram bot</text>
+  <rect x="336" y="122" width="56" height="22" rx="11" fill="#0f766e"/>
+  <text x="364" y="137" text-anchor="middle" class="pill">CLI</text>
+  <text x="430" y="128" class="why">Plain-language in, approval card out. Telegram is a zero-setup UI on any phone;</text>
+  <text x="430" y="146" class="why">the CLI (run_intent.py) covers headless / CI runs. Built on python-telegram-bot.</text>
+
+  <!-- Band 2: Reasoning -->
+  <rect x="60" y="184" width="910" height="80" rx="10" fill="#f6f8fc" stroke="#e2e8f0"/>
+  <rect x="60" y="184" width="6" height="80" rx="3" fill="#5b5bd6"/>
+  <text x="86" y="216" class="lnum">2</text>
+  <text x="86" y="234" class="layer">Reasoning</text>
+  <rect x="210" y="210" width="64" height="22" rx="11" fill="#5b5bd6"/>
+  <text x="242" y="225" text-anchor="middle" class="pill">Groq</text>
+  <rect x="282" y="210" width="130" height="22" rx="11" fill="#6d6df0"/>
+  <text x="347" y="225" text-anchor="middle" class="pill">Llama 3.3 70B</text>
+  <text x="430" y="216" class="why">Interprets intent against the manifest and asks when unsure. Groq's LPU is sub-second</text>
+  <text x="430" y="234" class="why">on a free tier (no card); OpenAI-compatible, so providers swap with one env var.</text>
+
+  <!-- Band 3: Orchestration -->
+  <rect x="60" y="272" width="910" height="80" rx="10" fill="#f6f8fc" stroke="#e2e8f0"/>
+  <rect x="60" y="272" width="6" height="80" rx="3" fill="#9a7b2f"/>
+  <text x="86" y="304" class="lnum">3</text>
+  <text x="86" y="322" class="layer">Orchestration</text>
+  <rect x="210" y="298" width="86" height="22" rx="11" fill="#1f3a5f"/>
+  <text x="253" y="313" text-anchor="middle" class="pill">IAI Agent</text>
+  <rect x="304" y="298" width="132" height="22" rx="11" fill="#9a7b2f"/>
+  <text x="370" y="313" text-anchor="middle" class="pill">Manifest (YAML)</text>
+  <text x="454" y="304" class="why">The intent layer: picks the action, sequences the gates, updates state. The manifest is</text>
+  <text x="454" y="322" class="why">the self-updating source of truth — ruamel.yaml keeps its ADR comments on rewrite.</text>
+
+  <!-- Band 4: Generation -->
+  <rect x="60" y="360" width="910" height="80" rx="10" fill="#f6f8fc" stroke="#e2e8f0"/>
+  <rect x="60" y="360" width="6" height="80" rx="3" fill="#1f3a5f"/>
+  <text x="86" y="392" class="lnum">4</text>
+  <text x="86" y="410" class="layer">Generation</text>
+  <rect x="210" y="386" width="96" height="22" rx="11" fill="#1f3a5f"/>
+  <text x="258" y="401" text-anchor="middle" class="pill">OpenTofu</text>
+  <text x="430" y="392" class="why">Renders the intent into infrastructure-as-code. OpenTofu is the OSI/MPL-licensed,</text>
+  <text x="430" y="410" class="why">Terraform-compatible engine — an open layer on an open engine, no BSL lock-in.</text>
+
+  <!-- Band 5: Validation -->
+  <rect x="60" y="448" width="910" height="80" rx="10" fill="#f6f8fc" stroke="#e2e8f0"/>
+  <rect x="60" y="448" width="6" height="80" rx="3" fill="#2e7d4f"/>
+  <text x="86" y="476" class="lnum">5</text>
+  <text x="86" y="494" class="layer">Validation</text>
+  <text x="86" y="510" class="st" font-size="10">Policy as Code</text>
+  <rect x="210" y="478" width="74" height="22" rx="11" fill="#1f3a5f"/>
+  <text x="247" y="493" text-anchor="middle" class="pill">Checkov</text>
+  <rect x="292" y="478" width="58" height="22" rx="11" fill="#7c3aed"/>
+  <text x="321" y="493" text-anchor="middle" class="pill">Trivy</text>
+  <rect x="358" y="478" width="80" height="22" rx="11" fill="#16864a"/>
+  <text x="398" y="493" text-anchor="middle" class="pill">Infracost</text>
+  <text x="454" y="484" class="why">Three gates before any human sees a change: Checkov + Trivy (security config) and</text>
+  <text x="454" y="502" class="why">Infracost (live cost). Gate accuracy is the trust contract — the human approves the summary.</text>
+
+  <!-- Band 6: Execution -->
+  <rect x="60" y="536" width="910" height="80" rx="10" fill="#f6f8fc" stroke="#e2e8f0"/>
+  <rect x="60" y="536" width="6" height="80" rx="3" fill="#7c3aed"/>
+  <text x="86" y="564" class="lnum">6</text>
+  <text x="86" y="582" class="layer">Execution</text>
+  <text x="86" y="598" class="st" font-size="10">keyless</text>
+  <rect x="210" y="566" width="58" height="22" rx="11" fill="#1f3a5f"/>
+  <text x="239" y="581" text-anchor="middle" class="pill">AWS</text>
+  <rect x="276" y="566" width="58" height="22" rx="11" fill="#7c3aed"/>
+  <text x="305" y="581" text-anchor="middle" class="pill">GCP</text>
+  <text x="430" y="572" class="why">Applies across clouds with zero static keys — AWS via the EC2 instance role (IMDSv2),</text>
+  <text x="430" y="590" class="why">GCP via Workload Identity Federation. Nothing to leak, nothing to rotate.</text>
+
+  <text x="500" y="644" text-anchor="middle" class="st" fill="#8693a6" font-size="10.5">© Elaia Raj — Infrastructure as Intent</text>
+</svg>

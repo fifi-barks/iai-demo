@@ -39,9 +39,7 @@ WELCOME = (
     "Describe what you need in plain language. I'll read the manifest, "
     "generate the infrastructure, run security and cost checks, and come "
     "back with a summary for you to approve or decline.\n\n"
-    "Try: \"Stand up a staging environment for the payments service: an EC2 "
-    "app tier in AWS and an export bucket in GCP. Tag it staging, owner "
-    "payments-team.\""
+    "Try: \"Set up the payments staging environment.\""
 )
 
 

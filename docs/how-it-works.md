@@ -12,7 +12,7 @@ This document explains what the demo does end to end, the tools it uses, how the
 
 A request travels through one straight pipeline with exactly one human decision in the middle:
 
-1. **Intent.** A plain-language request arrives via Telegram or the CLI — for example, *"Stand up a staging environment for the payments service: an EC2 app tier in AWS and an export bucket in GCP."* No code, no console.
+1. **Intent.** A plain-language request arrives via Telegram or the CLI — for example, *"Set up the payments staging environment."* The manifest already knows what that environment contains, so the user doesn't restate it. No code, no console.
 2. **Parse + reason.** An LLM interprets the request *against the platform manifest* and decides an action: provision, modify, destroy — or **clarify**. If the request is ambiguous it asks one short question and waits, rather than guessing. The conversation is remembered, so your answer composes with what you already said.
 3. **Read the manifest.** The agent consults the manifest — the source of truth for what already exists and which engine owns each resource — instead of guessing.
 4. **Generate.** It writes OpenTofu for the requested resources across AWS and GCP.

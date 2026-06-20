@@ -111,10 +111,10 @@ If you're running locally and just want to see the reasoning and gates, you don'
 ### CLI (quickest)
 
 ```bash
-python run_intent.py "Stand up a staging environment for the payments service: an EC2 app tier in AWS and an export bucket in GCP."
+python run_intent.py "Set up the payments staging environment."
 ```
 
-You'll see a startup line confirming the active model, e.g. `LLM: provider=groq model=llama-3.3-70b-versatile key=set`, then the approval card and an `Approve? [y/N]` prompt. Try an ambiguous request like `"delete"` and the agent will ask a clarifying question and remember your answer.
+You'll see a startup line confirming the active model, e.g. `LLM: provider=groq model=llama-3.3-70b-versatile key=set`, then the approval card and an `Approve? [y/N]` prompt. The agent fills in the multi-cloud detail from the manifest — you don't have to spell it out. Try an ambiguous request like `"delete"` and it will ask a clarifying question and remember your answer.
 
 ### Telegram bot
 

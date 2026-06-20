@@ -464,6 +464,44 @@ def _synthesize_destroy_card(
     return "\n".join(lines)
 
 
+def _deployed_from_state(terraform_dir: str, criticality: dict) -> list[dict]:
+    """Read the OpenTofu state and return the managed resources actually deployed.
+
+    This is the ground truth for what `tofu destroy` will remove — more accurate
+    than the manifest's logical entries. An "app tier" is really an EC2 instance
+    AND its security group; both live in the state and both get destroyed, so both
+    must show on the teardown card. Criticality is inherited from the matching
+    manifest resource (HCL name `app_tier` → manifest `app-tier`).
+    """
+    state_path = os.path.join(terraform_dir, "terraform.tfstate")
+    try:
+        with open(state_path, "r", encoding="utf-8") as fh:
+            state = json.load(fh)
+    except (OSError, ValueError):
+        return []
+
+    deployed = []
+    for res in state.get("resources", []):
+        if res.get("mode") != "managed":
+            continue  # skip data sources
+        rtype = res.get("type", "")
+        rname = res.get("name", "")
+        cloud = (
+            "aws" if rtype.startswith("aws_")
+            else "gcp" if rtype.startswith("google_")
+            else "unknown"
+        )
+        instances = res.get("instances") or [{}]
+        rid = (instances[0].get("attributes") or {}).get("id")
+        deployed.append({
+            "name": f"{rtype}.{rname}",
+            "resource_id": rid,
+            "criticality": criticality.get(rname.replace("_", "-"), "unknown"),
+            "cloud": cloud,
+        })
+    return deployed
+
+
 def run_destroy_pipeline(
     manifest_path: str, env: str = "staging", infracost_fixture: str | None = None
 ) -> dict:
@@ -479,23 +517,24 @@ def run_destroy_pipeline(
     resources = reader.get_resources(env)
     criticality = reader.resolve_criticality(env)
 
-    # Only resources the manifest records as actually deployed can be destroyed.
-    # The manifest state is the source of truth — NOT the generated HCL, which may
-    # be left over from a prior run. A resource counts as live if its state says
-    # "applied" or it carries a real resource_id.
-    to_destroy = []
-    for name, res in resources.items():
-        state = res.get("state", {}) or {}
-        rid = state.get("resource_id")
-        is_applied = state.get("status") == "applied" or rid not in (None, "", "~")
-        if not is_applied:
-            continue
-        to_destroy.append({
-            "name": name,
-            "resource_id": rid,
-            "criticality": criticality.get(name, "unknown"),
-            "cloud": res.get("cloud", "unknown"),
-        })
+    # Ground truth for a teardown = the OpenTofu STATE (exactly what `tofu destroy`
+    # will remove). It lists every cloud resource — including the EC2 instance AND
+    # its security group, which the manifest folds into a single "app-tier" entry.
+    to_destroy = _deployed_from_state(_GENERATED_DIR, criticality)
+
+    # Fallback: no readable tofu state → use the manifest's own state, counting the
+    # logical resources it marks applied (status == "applied" / a real resource_id).
+    if not to_destroy:
+        for name, res in resources.items():
+            state = res.get("state", {}) or {}
+            rid = state.get("resource_id")
+            if state.get("status") == "applied" or rid not in (None, "", "~"):
+                to_destroy.append({
+                    "name": name,
+                    "resource_id": rid,
+                    "criticality": criticality.get(name, "unknown"),
+                    "cloud": res.get("cloud", "unknown"),
+                })
 
     # Nothing is deployed → nothing to destroy. Say so plainly; no approval card,
     # no teardown. This is the state-tracking the manifest exists for.
